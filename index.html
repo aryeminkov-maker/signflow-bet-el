@@ -18,7 +18,7 @@
   --radius: 10px; --serif: 'Frank Ruhl Libre','David',serif; --sans:'Heebo',system-ui,sans-serif;
 }
 *{box-sizing:border-box;}
-html,body{margin:0;padding:0;}
+html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden;}
 body{background:var(--paper);color:var(--ink);font-family:var(--sans);min-height:100vh;direction:rtl;}
 ::selection{background:var(--seal);color:#fff;}
 a{color:inherit;} button{font-family:inherit;cursor:pointer;}
@@ -92,7 +92,9 @@ label.field-label{display:block;font-size:13px;font-weight:600;color:var(--ink-s
 .pdf-stage{position:relative;background:#3a3a3a;border-radius:var(--radius);overflow:auto;display:flex;justify-content:center;padding:20px;}
 .pdf-page-wrap{position:relative;box-shadow:0 4px 20px rgba(0,0,0,.35);background:#fff;}
 .pdf-page-wrap canvas{display:block;}
-.field-box{position:absolute;border:1.5px solid var(--seal);background:rgba(168,64,47,.10);border-radius:4px;font-size:10.5px;color:var(--seal-dark);font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:2px;text-align:center;overflow:hidden;}
+.field-box{position:absolute;border:1.5px solid var(--seal);background:rgba(168,64,47,.10);border-radius:4px;font-size:10.5px;color:var(--seal-dark);font-weight:700;display:flex;align-items:center;justify-content:center;cursor:grab;padding:2px;text-align:center;overflow:hidden;touch-action:none;user-select:none;}
+.field-box:active{cursor:grabbing;}
+.field-box .del{cursor:pointer;}
 .field-box .del{position:absolute;top:-9px;left:-9px;background:var(--ink);color:#fff;width:16px;height:16px;border-radius:50%;font-size:11px;line-height:16px;text-align:center;}
 .field-list-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;margin-bottom:6px;font-size:12.5px;background:#fff;}
 .field-list-item .sw{width:8px;height:8px;border-radius:2px;flex:none;background:var(--seal);}
@@ -898,6 +900,42 @@ function bindUploadEvents(){
 
   document.getElementById('btn-send-envelope')?.addEventListener('click', sendEnvelope);
   syncSendBtn();
+  bindFieldDrag(pageWrap, d);
+}
+// גרירת שדה חתימה שכבר מוקם, לשינוי מיקומו (בעכבר ובמגע כאחד)
+function bindFieldDrag(pageWrap, d){
+  if(!pageWrap) return;
+  pageWrap.querySelectorAll('.field-box').forEach(box=>{
+    const gi = +box.querySelector('.del')?.dataset.delField;
+    if(Number.isNaN(gi)) return;
+    box.addEventListener('pointerdown', (e)=>{
+      if(e.target.closest('.del')) return; // הלחיצה על ה-✕ מוחקת, לא גוררת
+      e.preventDefault(); e.stopPropagation();
+      const f = d.fields[gi];
+      const rect = pageWrap.getBoundingClientRect();
+      const startX = e.clientX, startY = e.clientY;
+      const startXPct = f.xPct, startYPct = f.yPct;
+      box.setPointerCapture(e.pointerId);
+      box.classList.add('dragging');
+      const onMove = (ev)=>{
+        const dxPct = (ev.clientX-startX)/rect.width;
+        const dyPct = (ev.clientY-startY)/rect.height;
+        f.xPct = Math.max(0, Math.min(1-f.wPct, startXPct+dxPct));
+        f.yPct = Math.max(0, Math.min(1-f.hPct, startYPct+dyPct));
+        box.style.left = (f.xPct*100)+'%';
+        box.style.top = (f.yPct*100)+'%';
+      };
+      const onUp = (ev)=>{
+        box.removeEventListener('pointermove', onMove);
+        box.removeEventListener('pointerup', onUp);
+        box.removeEventListener('pointercancel', onUp);
+        box.classList.remove('dragging');
+      };
+      box.addEventListener('pointermove', onMove);
+      box.addEventListener('pointerup', onUp);
+      box.addEventListener('pointercancel', onUp);
+    });
+  });
 }
 function syncSendBtn(){
   const d = state.draft;
@@ -932,21 +970,33 @@ async function handleFile(file){
   }catch(err){ console.error(err); toastError('שגיאה בקריאת קובץ ה-PDF — ייתכן שהקובץ פגום או אינו PDF תקין.'); }
 }
 
+let editorRenderToken = 0;
+let editorRenderTask = null;
 async function renderPdfIntoEditor(){
   const d = state.draft;
   if(!d.documentBase64) return;
   const canvas = document.getElementById('pdfCanvas');
   if(!canvas) return;
+  const myToken = ++editorRenderToken; // invalidates any still-pending older render below
+  if(editorRenderTask){ try{ editorRenderTask.cancel(); }catch(e){} }
   try{
     const buf = base64ToBuf(d.documentBase64);
     const pdf = await pdfjsLib.getDocument({data: buf}).promise;
     const page = await pdf.getPage(state.currentPage);
+    if(myToken !== editorRenderToken) return; // a newer render started while we were loading — bail out
     const viewport = page.getViewport({scale:1});
-    const scale = 640/viewport.width;
+    const stageEl = document.querySelector('.pdf-stage');
+    const availW = stageEl ? Math.max(200, stageEl.clientWidth - 40) : 640; // 40px = stage padding
+    const scale = Math.min(640, availW)/viewport.width;
     const sv = page.getViewport({scale});
     canvas.width = sv.width; canvas.height = sv.height;
-    await page.render({canvasContext:canvas.getContext('2d'), viewport:sv}).promise;
-  }catch(err){ console.error(err); }
+    editorRenderTask = page.render({canvasContext:canvas.getContext('2d'), viewport:sv});
+    await editorRenderTask.promise;
+    editorRenderTask = null;
+  }catch(err){
+    if(err && err.name==='RenderingCancelledException') return;
+    console.error(err);
+  }
 }
 
 /* ================= SEND ================= */
@@ -1463,19 +1513,31 @@ function placeStepHtml(env, signer){
     </div>
   </div>`;
 }
+let modalRenderToken = 0;
+let modalRenderTask = null;
 async function renderModalPdfPage(env, pageNum){
   const canvas = document.getElementById('modalPdfCanvas');
   if(!canvas) return;
+  const myToken = ++modalRenderToken;
+  if(modalRenderTask){ try{ modalRenderTask.cancel(); }catch(e){} }
   try{
     const buf = base64ToBuf(env.documentBase64);
     const pdf = await pdfjsLib.getDocument({data: buf}).promise;
     const page = await pdf.getPage(pageNum);
+    if(myToken !== modalRenderToken) return;
     const viewport = page.getViewport({scale:1});
-    const scale = 620/viewport.width;
+    const stageEl = document.querySelector('#signModalOverlay .pdf-stage');
+    const availW = stageEl ? Math.max(200, stageEl.clientWidth - 40) : 620;
+    const scale = Math.min(620, availW)/viewport.width;
     const sv = page.getViewport({scale});
     canvas.width = sv.width; canvas.height = sv.height;
-    await page.render({canvasContext:canvas.getContext('2d'), viewport:sv}).promise;
-  }catch(err){ console.error(err); }
+    modalRenderTask = page.render({canvasContext:canvas.getContext('2d'), viewport:sv});
+    await modalRenderTask.promise;
+    modalRenderTask = null;
+  }catch(err){
+    if(err && err.name==='RenderingCancelledException') return;
+    console.error(err);
+  }
 }
 function bindPlaceStep(env, signer){
   const sm = state.signModal;
