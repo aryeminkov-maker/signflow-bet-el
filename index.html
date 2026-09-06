@@ -1,0 +1,1697 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>חתימה+ | מערכת חתימה דיגיטלית</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Heebo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#16232B; --ink-soft:#3C4E58; --paper:#F5F3EE; --paper-raised:#FFFFFF;
+  --line:#DAD5C8; --seal:#A8402F; --seal-dark:#7E2E21; --moss:#3B6E5E; --moss-soft:#DCE9E3;
+  --amber:#B4802E; --amber-soft:#F3E6CC; --gray:#8A8478;
+  --shadow: 0 1px 2px rgba(22,35,43,.06), 0 8px 24px rgba(22,35,43,.08);
+  --radius: 10px; --serif: 'Frank Ruhl Libre','David',serif; --sans:'Heebo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);min-height:100vh;direction:rtl;}
+::selection{background:var(--seal);color:#fff;}
+a{color:inherit;} button{font-family:inherit;cursor:pointer;}
+.shell{max-width:1180px;margin:0 auto;padding:0 24px 80px;}
+header.topbar{border-bottom:1px solid var(--line);background:var(--paper-raised);position:sticky;top:0;z-index:40;}
+.topbar-inner{max-width:1180px;margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-mark{width:38px;height:38px;flex:none;}
+.brand-text{font-family:var(--serif);font-weight:700;font-size:22px;letter-spacing:.2px;}
+.brand-sub{font-size:11px;color:var(--gray);letter-spacing:.5px;margin-top:-2px;}
+nav.tabs{display:flex;gap:4px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:4px;}
+nav.tabs button{border:none;background:transparent;padding:9px 16px;border-radius:999px;font-size:13.5px;font-weight:600;color:var(--ink-soft);transition:.15s;white-space:nowrap;}
+nav.tabs button.active{background:var(--ink);color:#fff;}
+.identity-switcher{display:flex;align-items:center;gap:8px;}
+.identity-switcher select{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12.5px;font-family:inherit;max-width:230px;color:var(--ink);}
+.identity-switcher .id-label{font-size:11px;color:var(--gray);white-space:nowrap;}
+.demo-banner{background:var(--amber-soft);color:#5C4318;border-bottom:1px solid #E4CE9C;font-size:13px;text-align:center;padding:8px 16px;}
+h1,h2,h3{font-family:var(--serif);font-weight:700;margin:0 0 8px;}
+.page-title{font-size:30px;margin:32px 0 6px;}
+.page-sub{color:var(--ink-soft);font-size:15px;margin-bottom:28px;}
+.card{background:var(--paper-raised);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);}
+.card-pad{padding:22px 24px;}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;border:1px solid transparent;padding:11px 20px;font-size:14.5px;font-weight:600;transition:.15s;}
+.btn-primary{background:var(--ink);color:#fff;} .btn-primary:hover{background:#0d181e;}
+.btn-seal{background:var(--seal);color:#fff;} .btn-seal:hover{background:var(--seal-dark);}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--line);} .btn-ghost:hover{background:#EFEBE1;}
+.btn-danger{background:transparent;color:var(--seal);border-color:#E7C9C2;} .btn-danger:hover{background:#FBEEEC;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.btn-sm{padding:7px 14px;font-size:13px;}
+input[type=text],input[type=email],input[type=tel],select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit;font-size:14.5px;color:var(--ink);}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--moss);outline-offset:1px;}
+label.field-label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;}
+.field-group{margin-bottom:16px;}
+.hint{font-size:12.5px;color:var(--gray);margin-top:5px;}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;}
+.badge-draft{background:#EAE7DF;color:#6B655A;}
+.badge-sent{background:var(--amber-soft);color:#7A5A1E;}
+.badge-progress{background:#E4EEF7;color:#2E5E82;}
+.badge-completed{background:var(--moss-soft);color:#265144;}
+.badge-declined{background:#F7E3E0;color:var(--seal-dark);}
+.badge-voided{background:#EFEBE1;color:#8A8478;}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+.role-admin{background:#F7E3E0;color:var(--seal-dark);}
+.role-sender{background:var(--amber-soft);color:#7A5A1E;}
+.role-signer{background:var(--moss-soft);color:#265144;}
+.env-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:8px;}
+.env-card{padding:18px 20px;cursor:pointer;transition:.15s;}
+.env-card:hover{border-color:var(--ink);transform:translateY(-1px);}
+.env-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;}
+.env-card h3{font-size:17px;margin:0;}
+.env-meta{font-size:12.5px;color:var(--gray);margin-top:4px;}
+.progress-track{height:6px;background:#EDEAE1;border-radius:99px;margin-top:14px;overflow:hidden;}
+.progress-fill{height:100%;background:var(--moss);border-radius:99px;transition:.4s;}
+.empty-state{text-align:center;padding:70px 20px;color:var(--gray);}
+.empty-state .seal-icon{width:56px;height:56px;margin:0 auto 16px;opacity:.5;}
+.dropzone{border:2px dashed var(--line);border-radius:var(--radius);padding:46px 20px;text-align:center;background:#FBFAF6;transition:.15s;cursor:pointer;}
+.dropzone.drag{border-color:var(--seal);background:#FBEEEC;}
+.dropzone svg{opacity:.55;margin-bottom:10px;}
+.signer-check-row{display:flex;gap:10px;align-items:center;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:#fff;}
+.signer-check-row.sel{border-color:var(--moss);background:var(--moss-soft);}
+.signer-order{width:26px;height:26px;border-radius:50%;background:var(--ink);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;}
+.signer-info{flex:1;min-width:0;}
+.signer-info .nm{font-weight:600;font-size:14px;}
+.signer-info .em{font-size:12.5px;color:var(--gray);}
+.icon-btn{border:none;background:transparent;color:var(--gray);padding:6px;border-radius:6px;line-height:0;}
+.icon-btn:hover{background:#EFEBE1;color:var(--ink);}
+.editor-shell{display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start;}
+@media (max-width:900px){.editor-shell{grid-template-columns:1fr;}}
+.pdf-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px;}
+.page-nav{display:flex;align-items:center;gap:10px;font-size:13.5px;}
+.pdf-stage{position:relative;background:#3a3a3a;border-radius:var(--radius);overflow:auto;display:flex;justify-content:center;padding:20px;}
+.pdf-page-wrap{position:relative;box-shadow:0 4px 20px rgba(0,0,0,.35);background:#fff;}
+.pdf-page-wrap canvas{display:block;}
+.field-box{position:absolute;border:1.5px solid var(--seal);background:rgba(168,64,47,.10);border-radius:4px;font-size:10.5px;color:var(--seal-dark);font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:2px;text-align:center;overflow:hidden;}
+.field-box .del{position:absolute;top:-9px;left:-9px;background:var(--ink);color:#fff;width:16px;height:16px;border-radius:50%;font-size:11px;line-height:16px;text-align:center;}
+.field-list-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;margin-bottom:6px;font-size:12.5px;background:#fff;}
+.field-list-item .sw{width:8px;height:8px;border-radius:2px;flex:none;background:var(--seal);}
+table.audit{width:100%;border-collapse:collapse;font-size:13px;}
+table.audit th{text-align:right;color:var(--gray);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;}
+table.audit td{padding:9px 10px;border-bottom:1px solid #EFEBE1;}
+table.audit tr:last-child td{border-bottom:none;}
+.mono{font-family:ui-monospace,'Courier New',monospace;font-size:11.5px;color:var(--gray);}
+.signer-status-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #EFEBE1;}
+.signer-status-row:last-child{border-bottom:none;}
+.status-dot{width:10px;height:10px;border-radius:50%;flex:none;}
+.status-dot.pending{background:#D9D3C4;} .status-dot.active{background:var(--amber);box-shadow:0 0 0 4px var(--amber-soft);}
+.status-dot.signed{background:var(--moss);} .status-dot.declined{background:var(--seal);}
+.modal-overlay{position:fixed;inset:0;background:rgba(22,35,43,.55);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;}
+.modal{background:var(--paper-raised);border-radius:14px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.modal-head{padding:20px 26px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
+.modal-body{padding:24px 26px;} .modal-foot{padding:16px 26px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;}
+.otp-boxes{display:flex;gap:8px;direction:ltr;justify-content:center;margin:18px 0;}
+.otp-boxes input{width:44px;height:52px;text-align:center;font-size:22px;font-weight:700;}
+.otp-demo-note{background:var(--amber-soft);border:1px solid #E4CE9C;border-radius:8px;padding:12px 14px;font-size:13px;color:#5C4318;margin-bottom:14px;}
+.sig-pad-wrap{border:1.5px dashed var(--line);border-radius:10px;background:#fff;position:relative;}
+.sig-pad-wrap canvas{width:100%;height:180px;display:block;cursor:crosshair;touch-action:none;}
+.sig-baseline{position:absolute;left:24px;right:24px;bottom:34px;border-bottom:1px solid #D9D3C4;pointer-events:none;}
+.seal-stamp{width:120px;height:120px;margin:0 auto 14px;border:3px solid var(--seal);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--seal);font-family:var(--serif);font-weight:900;font-size:15px;text-align:center;line-height:1.3;transform:rotate(-8deg);opacity:0;animation:stampIn .5s ease-out .1s forwards;}
+@keyframes stampIn{0%{opacity:0;transform:rotate(-8deg) scale(2.4);}70%{opacity:1;}100%{opacity:.92;transform:rotate(-8deg) scale(1);}}
+.checklist-item{display:flex;align-items:flex-start;gap:10px;font-size:13.5px;padding:8px 0;}
+.toast-wrap{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;}
+.toast{background:var(--ink);color:#fff;padding:11px 20px;border-radius:8px;font-size:13.5px;box-shadow:var(--shadow);animation:toastIn .2s ease-out;}
+.toast.toast-error{background:var(--seal);font-weight:600;}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.section-nav-back{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-soft);font-weight:600;margin-bottom:14px;background:none;border:none;padding:0;}
+.section-nav-back:hover{color:var(--ink);}
+.detail-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;align-items:start;}
+@media (max-width:880px){.detail-grid{grid-template-columns:1fr;}}
+.stat-line{display:flex;justify-content:space-between;font-size:13.5px;padding:7px 0;border-bottom:1px solid #EFEBE1;}
+.stat-line:last-child{border-bottom:none;} .stat-line b{font-weight:600;}
+.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.section-block{margin-bottom:22px;}
+.section-num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--ink);color:#fff;font-size:13px;font-weight:700;margin-left:10px;}
+.section-heading{display:flex;align-items:center;font-size:17px;font-family:var(--serif);font-weight:700;margin-bottom:14px;}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;}
+.switch{width:40px;height:22px;border-radius:99px;background:#D9D3C4;position:relative;flex:none;transition:.2s;}
+.switch.on{background:var(--moss);}
+.switch::after{content:'';position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;}
+.switch.on::after{right:20px;}
+.disabled-block{opacity:.5;pointer-events:none;}
+.roster-table{width:100%;border-collapse:collapse;font-size:13.5px;}
+.roster-table th{text-align:right;color:var(--gray);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;}
+.roster-table td{padding:10px;border-bottom:1px solid #EFEBE1;vertical-align:middle;}
+.import-row.dup{background:#FBF3E4;}
+.import-row.excluded{opacity:.4;}
+.import-dropzone{border:2px dashed var(--line);border-radius:var(--radius);padding:26px 20px;text-align:center;background:#FBFAF6;cursor:pointer;transition:.15s;}
+.import-dropzone.drag{border-color:var(--seal);background:#FBEEEC;}
+.tag-new{background:var(--moss-soft);color:#265144;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;}
+.tag-update{background:var(--amber-soft);color:#7A5A1E;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;}
+</style>
+</head>
+<body>
+<div class="demo-banner">🔧 מצב הדגמה מקומית: אין שרת SMS/Email אמיתי — קודי אימות ותהליך החתימה מוצגים בתוך האפליקציה לצורך סימולציה מלאה. מסמכים, חתימות, הרשאות ו-Audit Trail — אמיתיים ונשמרים.</div>
+<div class="demo-banner" id="backendBadge" style="background:#F1EFE8;border-bottom:1px solid var(--line);"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" fill="none">
+        <circle cx="20" cy="20" r="19" stroke="#A8402F" stroke-width="2"/>
+        <path d="M11 24c2.5-6 4.5-9 6.5-9s2 3 4 3 3.5-4 7.5-4" stroke="#16232B" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+        <path d="M11 27h18" stroke="#A8402F" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <div><div class="brand-text">חתימה<span style="color:#A8402F">+</span></div><div class="brand-sub">מערכת חתימה דיגיטלית ארגונית</div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <nav class="tabs" id="navTabs"></nav>
+      <div class="identity-switcher" id="identitySwitcher"></div>
+    </div>
+  </div>
+</header>
+<div class="shell" id="app"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+<script>
+/* ---------------- storage portability shim ----------------
+   window.storage is Claude's built-in artifact persistence API and only
+   exists when this file runs inside a Claude.ai conversation. When this
+   file is deployed standalone (Netlify, GitHub Pages, opened locally, etc.)
+   we transparently back it with localStorage instead, so the exact same
+   file works in both places. Per-browser only when running standalone —
+   data will not sync across different computers/users in that mode. */
+if(!window.storage){
+  const LS_PREFIX = 'signflow:';
+  window.storage = {
+    async get(key, shared){
+      const raw = localStorage.getItem(LS_PREFIX+key);
+      if(raw===null) throw new Error('key not found: '+key);
+      return { key, value: raw, shared: !!shared };
+    },
+    async set(key, value, shared){
+      localStorage.setItem(LS_PREFIX+key, value);
+      return { key, value, shared: !!shared };
+    },
+    async delete(key, shared){
+      localStorage.removeItem(LS_PREFIX+key);
+      return { key, deleted:true, shared: !!shared };
+    },
+    async list(prefix, shared){
+      const keys = Object.keys(localStorage)
+        .filter(k=>k.startsWith(LS_PREFIX+(prefix||'')))
+        .map(k=>k.slice(LS_PREFIX.length));
+      return { keys, prefix, shared: !!shared };
+    }
+  };
+}
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+const { PDFDocument, rgb } = PDFLib;
+
+const STATUS_LABEL = { Draft:'טיוטה', Sent:'נשלח', InProgress:'בתהליך', Completed:'הושלם', Declined:'נדחה', Voided:'בוטל' };
+const STATUS_CLASS = { Draft:'badge-draft', Sent:'badge-sent', InProgress:'badge-progress', Completed:'badge-completed', Declined:'badge-declined', Voided:'badge-voided' };
+const ROLE_LABEL = { admin:'מנהל מערכת', sender:'שולח מסמכים', signer:'חותם' };
+const ROLE_CLASS = { admin:'role-admin', sender:'role-sender', signer:'role-signer' };
+
+const uid = () => Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+const nowISO = () => new Date().toISOString();
+const fmtDT = (iso) => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString('he-IL')+' '+d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}); };
+const fmtD = (iso) => { if(!iso) return '—'; return new Date(iso).toLocaleDateString('he-IL'); };
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg){ const wrap=document.getElementById('toastWrap'); const el=document.createElement('div'); el.className='toast'; el.textContent=msg; wrap.appendChild(el); setTimeout(()=>el.remove(),3200); }
+function toastError(msg){ const wrap=document.getElementById('toastWrap'); const el=document.createElement('div'); el.className='toast toast-error'; el.textContent='⚠ '+msg; wrap.appendChild(el); setTimeout(()=>el.remove(),5000); }
+
+async function sha256(bytesOrString){
+  let buf = typeof bytesOrString === 'string' ? new TextEncoder().encode(bytesOrString) : bytesOrString;
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function bufToBase64(buf){ let binary=''; const bytes=new Uint8Array(buf); for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]); return btoa(binary); }
+function base64ToBuf(b64){ const binary=atob(b64); const bytes=new Uint8Array(binary.length); for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i); return bytes.buffer; }
+
+/* ---------------- storage: local backend (this browser only) ---------------- */
+const LocalStorageAPI = {
+  async listEnvelopeIds(){ try{ const r=await window.storage.get('envelope-index'); return r?JSON.parse(r.value):[]; }catch(e){ return []; } },
+  async saveIndex(ids){ await window.storage.set('envelope-index', JSON.stringify(ids)); },
+  async getEnvelope(id){ try{ const r=await window.storage.get('envelope:'+id); return r?JSON.parse(r.value):null; }catch(e){ return null; } },
+  async saveEnvelope(env){ await window.storage.set('envelope:'+env.id, JSON.stringify(env)); const ids=await this.listEnvelopeIds(); if(!ids.includes(env.id)){ ids.unshift(env.id); await this.saveIndex(ids); } },
+  async getRoster(){ try{ const r=await window.storage.get('roster'); return r?JSON.parse(r.value):[]; }catch(e){ return []; } },
+  async upsertPerson(person){
+    const list = await this.getRoster();
+    const idx = list.findIndex(p=>p.id===person.id);
+    if(idx>=0) list[idx]=person; else list.push(person);
+    await window.storage.set('roster', JSON.stringify(list));
+  },
+  async deletePerson(id){
+    const list = (await this.getRoster()).filter(p=>p.id!==id);
+    await window.storage.set('roster', JSON.stringify(list));
+  },
+  async getCurrentUserId(){ try{ const r=await window.storage.get('current-user-id'); return r && r.value ? r.value : null; }catch(e){ return null; } },
+  async setCurrentUserId(id){ await window.storage.set('current-user-id', id||''); }
+};
+
+/* ---------------- storage: Firebase (Firestore + Storage) backend ----------------
+   Fill in your Firebase project config below and this app will automatically
+   switch to it — every document, signer, roster entry and audit event will be
+   shared in real time across everyone who opens this page.
+   Get this from: Firebase Console → Project settings → General → Your apps → SDK setup */
+const firebaseConfig = {
+  apiKey: "AIzaSyC3ZTdMK7Q7-St8lkK2Q2WsDVg8riCrep4",
+  authDomain: "signflow-bet-el.firebaseapp.com",
+  projectId: "signflow-bet-el",
+  storageBucket: "signflow-bet-el.firebasestorage.app",
+  messagingSenderId: "424689027398",
+  appId: "1:424689027398:web:5dbe523f318daa7a6fbd47",
+};
+
+let fbApp=null, fbDb=null, fbAuth=null;
+
+async function tryInitFirebase(){
+  if(!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY"){
+    console.info('[signflow] Firebase not configured — using local browser storage.');
+    return false;
+  }
+  try{
+    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+    const firestoreMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    const authMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+    fbApp = initializeApp(firebaseConfig);
+    fbDb = firestoreMod.getFirestore(fbApp);
+    fbAuth = authMod.getAuth(fbApp);
+    await authMod.signInAnonymously(fbAuth); // anonymous identity so Firestore rules can require auth != null
+    window.__fb = { firestoreMod, authMod }; // keep module refs reachable for CloudStorageAPI below
+    console.info('[signflow] Connected to Firebase project (Firestore only, free Spark plan):', firebaseConfig.projectId);
+    return true;
+  }catch(err){
+    console.error('[signflow] Firebase init failed, falling back to local storage:', err);
+    toastError('החיבור ל-Firebase נכשל — עובד במצב מקומי בלבד. פרטים בקונסולת הדפדפן.');
+    return false;
+  }
+}
+
+/* PDFs are stored directly inside the Firestore document (base64) so the whole
+   backend runs on the free Spark plan — no Firebase Storage / Blaze plan needed.
+   Firestore caps each document at 1MB, so we keep a safety margin here and
+   warn the user client-side before they even try to upload a file that's too big. */
+const FIRESTORE_SAFE_PDF_BYTES = 650 * 1024; // ~650KB raw PDF ≈ ~890KB after base64 + JSON overhead
+
+const CloudStorageAPI = {
+  async listEnvelopeIds(){
+    const { collection, getDocs } = window.__fb.firestoreMod;
+    const snap = await getDocs(collection(fbDb,'envelopes'));
+    return snap.docs.map(d=>d.id);
+  },
+  async getEnvelope(id){
+    const { doc, getDoc } = window.__fb.firestoreMod;
+    const snap = await getDoc(doc(fbDb,'envelopes',id));
+    if(!snap.exists()) return null;
+    return { id, ...snap.data() };
+  },
+  async saveEnvelope(env){
+    const { doc, setDoc } = window.__fb.firestoreMod;
+    const toSave = { ...env };
+    delete toSave.id;
+    await setDoc(doc(fbDb,'envelopes',env.id), toSave);
+  },
+  async getRoster(){
+    const { collection, getDocs } = window.__fb.firestoreMod;
+    const snap = await getDocs(collection(fbDb,'roster'));
+    return snap.docs.map(d=>({ id:d.id, ...d.data() }));
+  },
+  async upsertPerson(person){
+    const { doc, setDoc } = window.__fb.firestoreMod;
+    const data = {
+      name: person.name||'', email: person.email||'', phone: person.phone||'',
+      role: person.role||'signer', internal: person.internal!==false,
+      signatureImage: person.signatureImage||'',
+      // שדות התראות Push — נשמרים כאן במפורש כדי שלא יימחקו בכל עריכת פרופיל דרך savePerson
+      fcmToken: person.fcmToken||null, notificationsEnabledAt: person.notificationsEnabledAt||null,
+    };
+    await setDoc(doc(fbDb,'roster',person.id), data);
+  },
+  async deletePerson(id){
+    const { doc, deleteDoc } = window.__fb.firestoreMod;
+    await deleteDoc(doc(fbDb,'roster',id));
+  },
+  // "who am I pretending to be" is a per-device UI convenience, not shared org data — keep it local
+  async getCurrentUserId(){ return localStorage.getItem('signflow:current-user-id') || null; },
+  async setCurrentUserId(id){ localStorage.setItem('signflow:current-user-id', id||''); }
+};
+
+let StorageAPI = LocalStorageAPI; // swapped to CloudStorageAPI at startup if Firebase is configured
+let usingCloudBackend = false;
+
+/* ---------------- PUSH NOTIFICATIONS (Firebase Cloud Messaging) ----------------
+   Two things must be filled in below before this actually works:
+   1. FCM_VAPID_KEY  — Firebase Console → Project settings → Cloud Messaging →
+      Web configuration → "Generate key pair".
+   2. PUSH_WORKER_URL — the address of a small Cloudflare Worker (deployed
+      separately) that holds the Firebase Service Account and performs the
+      actual send via the FCM HTTP v1 API. Browsers cannot send FCM messages
+      directly/securely, so this indirection is required.
+   Until both are filled in, notification permission/token requests are skipped
+   (or clearly reported to the user) and the rest of the app keeps working
+   exactly as before — this is purely additive. */
+const FCM_VAPID_KEY = ''; // TODO: להדביק כאן את מפתח ה-VAPID
+const PUSH_WORKER_URL = ''; // TODO: להדביק כאן את כתובת ה-Cloudflare Worker
+const PUSH_WORKER_SECRET = ''; // TODO: להדביק כאן את אותו SEND_SECRET שהוגדר ב-Worker (מונע שליחת פוש על ידי גורם חיצוני שמצא את הכתובת)
+
+let fbMessaging = null; // cached { mod, instance } once initialized
+async function tryGetMessaging(){
+  if(!usingCloudBackend) return null; // tokens are stored on roster docs in Firestore — needs the cloud backend
+  if(!('Notification' in window) || !('serviceWorker' in navigator)) return null;
+  if(fbMessaging) return fbMessaging;
+  try{
+    const messagingMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js");
+    fbMessaging = { mod: messagingMod, instance: messagingMod.getMessaging(fbApp) };
+    return fbMessaging;
+  }catch(err){
+    console.error('[signflow] Firebase Messaging init failed', err);
+    return null;
+  }
+}
+
+async function enablePushNotifications(){
+  const cu = getCurrentUser();
+  if(!cu){ toast('יש לבחור זהות דרך "מחובר/ת כ:" לפני הפעלת התראות'); return; }
+  if(!FCM_VAPID_KEY){ toastError('התראות טרם הוגדרו סופית באתר (חסר מפתח VAPID) — זו הודעה למפתח האתר, לא תקלה אצלכם.'); return; }
+  const fbm = await tryGetMessaging();
+  if(!fbm){ toastError('הדפדפן הזה לא תומך בהתראות Push, או שהאתר עדיין לא רץ ב-HTTPS. באייפון/Safari יש להתקין קודם את האתר למסך הבית.'); return; }
+  try{
+    const permission = await Notification.requestPermission();
+    if(permission!=='granted'){ toast('לא אושרה הרשאת התראות. אפשר לאשר בהמשך דרך הגדרות הדפדפן.'); return; }
+    const reg = await navigator.serviceWorker.register('./sw.js');
+    const token = await fbm.mod.getToken(fbm.instance, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+    if(!token) throw new Error('לא התקבל טוקן התראות מהדפדפן');
+    cu.fcmToken = token; cu.notificationsEnabledAt = nowISO();
+    await StorageAPI.upsertPerson(cu);
+    await refreshRoster();
+    toast('התראות הופעלו בהצלחה 🔔');
+    render();
+  }catch(err){
+    console.error('[signflow] enablePushNotifications failed', err);
+    toastError('שגיאה בהפעלת התראות: ' + err.message);
+  }
+}
+async function disablePushNotifications(){
+  const cu = getCurrentUser();
+  if(!cu) return;
+  try{
+    const fbm = await tryGetMessaging();
+    if(fbm){ try{ await fbm.mod.deleteToken(fbm.instance); }catch(e){ /* לא קריטי אם נכשל */ } }
+    cu.fcmToken = '';
+    await StorageAPI.upsertPerson(cu);
+    await refreshRoster();
+    toast('התראות בוטלו');
+    render();
+  }catch(err){
+    console.error('[signflow] disablePushNotifications failed', err);
+    toastError('שגיאה בביטול התראות: ' + err.message);
+  }
+}
+
+async function sendPushViaWorker(token, title, body){
+  if(!token) return;
+  if(!PUSH_WORKER_URL){ console.info('[signflow] Push skipped — PUSH_WORKER_URL not configured yet.'); return; }
+  try{
+    await fetch(PUSH_WORKER_URL + '/send', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ token, title, body, key: PUSH_WORKER_SECRET })
+    });
+  }catch(err){ console.error('[signflow] push send failed', err); }
+}
+function findPersonById(id){ return state.roster.find(p=>p.id===id) || null; }
+// חותם שתורו הגיע (זרימה טורית: כשמתפנה אליו התור; זרימה מקבילה: לכולם מיד עם השליחה, כי כולם פעילים מהרגע הראשון)
+async function notifySignerTurn(env, signer){
+  const person = findPersonById(signer.id);
+  if(!person || !person.fcmToken) return;
+  await sendPushViaWorker(person.fcmToken, 'מסמך ממתין לחתימתך', `הגיע תורך לחתום על "${env.title}"`);
+}
+// בעל המסמך (מי ששלח אותו) מקבל עדכון על כל חתימה שמתקבלת
+async function notifyOwnerSigned(env, signer){
+  if(!env.createdById || env.createdById===signer.id) return;
+  const owner = findPersonById(env.createdById);
+  if(!owner || !owner.fcmToken) return;
+  await sendPushViaWorker(owner.fcmToken, 'התקבלה חתימה', `${signer.name} חתם/ה על "${env.title}"`);
+}
+// בעל המסמך מקבל עדכון כשכל סבב החתימות הושלם
+async function notifyOwnerCompleted(env){
+  if(!env.createdById) return;
+  const owner = findPersonById(env.createdById);
+  if(!owner || !owner.fcmToken) return;
+  await sendPushViaWorker(owner.fcmToken, 'המסמך הושלם', `כלל החותמים סיימו לחתום על "${env.title}"`);
+}
+
+
+let state = {
+  tab: 'upload',
+  envelopes: [],
+  roster: [],
+  currentEnvId: null,
+  editingPersonId: null,
+  draft: null,      // new envelope being built on the single upload page
+  currentPage: 1,
+  fieldsEnabled: false,
+  placingSignerId: null,
+  signModal: null,
+  importPreview: null, // array of parsed rows awaiting confirmation
+  currentUserId: null, // demo identity — who is "logged in" right now, drives permission-based UI
+};
+let adminSigDraft = ''; // base64 PNG data URL of signature currently staged in the admin add/edit form
+
+const app = document.getElementById('app');
+
+async function init(){
+  usingCloudBackend = await tryInitFirebase();
+  if(usingCloudBackend){ StorageAPI = CloudStorageAPI; }
+  renderBackendBadge();
+  await refreshEnvelopes();
+  await refreshRoster();
+  state.currentUserId = await StorageAPI.getCurrentUserId();
+  resetDraft();
+  const allowed = getAllowedTabs();
+  state.tab = defaultTabForUser(getCurrentUser());
+  if(!allowed.includes(state.tab)) state.tab = allowed[0];
+  renderNavTabs();
+  renderIdentitySwitcher();
+  render();
+  if(usingCloudBackend) attachRealtimeListeners();
+}
+function renderBackendBadge(){
+  const el = document.getElementById('backendBadge');
+  if(!el) return;
+  if(usingCloudBackend){
+    el.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#3B6E5E;display:inline-block;"></span>מחובר ל-Firebase (Firestore, תוכנית חינמית) — נתונים משותפים בזמן אמת</span>`;
+    el.style.color = '#265144';
+  } else {
+    el.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#B4802E;display:inline-block;"></span>מצב מקומי בלבד — הנתונים נשמרים רק בדפדפן הזה. כדי לסנכרן בין מחשבים, מלאו את firebaseConfig בקוד.</span>`;
+    el.style.color = '#7A5A1E';
+  }
+}
+function attachRealtimeListeners(){
+  try{
+    const { collection, onSnapshot } = window.__fb.firestoreMod;
+    onSnapshot(collection(fbDb,'envelopes'), async ()=>{
+      await refreshEnvelopes();
+      if(state.tab==='dashboard') render();
+    });
+    onSnapshot(collection(fbDb,'roster'), async ()=>{
+      await refreshRoster();
+      renderIdentitySwitcher();
+      if(state.tab==='admin') renderAdminPage();
+      if(state.tab==='upload') renderUploadPage();
+    });
+  }catch(err){ console.error('[signflow] realtime listener setup failed', err); }
+}
+async function refreshEnvelopes(){
+  const ids = await StorageAPI.listEnvelopeIds();
+  const list = [];
+  for(const id of ids){ const e = await StorageAPI.getEnvelope(id); if(e) list.push(e); }
+  list.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+  state.envelopes = list;
+}
+async function refreshRoster(){ state.roster = await StorageAPI.getRoster(); }
+
+/* ---------------- permissions (demo identity simulation) ---------------- */
+function getCurrentUser(){
+  if(!state.currentUserId) return null;
+  return state.roster.find(p=>p.id===state.currentUserId) || null;
+}
+function getAllowedTabs(){
+  const u = getCurrentUser();
+  if(!u) return ['upload','dashboard','admin'];           // no identity selected → unrestricted bootstrap/admin mode
+  if(u.role==='admin') return ['upload','dashboard','admin'];
+  if(u.role==='sender') return ['upload'];
+  if(u.role==='signer') return ['dashboard','upload'];
+  return ['upload','dashboard','admin'];
+}
+function defaultTabForUser(u){
+  if(!u) return 'upload';
+  if(u.role==='signer') return 'dashboard';
+  if(u.role==='sender') return 'upload';
+  return 'upload'; // admin
+}
+const TAB_LABELS = { upload:'העלאת מסמכים', dashboard:'מסמכים לחתימה', admin:'ניהול משתמשים' };
+function renderNavTabs(){
+  const nav = document.getElementById('navTabs');
+  if(!nav) return;
+  const allowed = getAllowedTabs();
+  nav.innerHTML = allowed.map(t=>`<button data-tab="${t}" class="${state.tab===t?'active':''}">${TAB_LABELS[t]}</button>`).join('');
+  nav.querySelectorAll('button').forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.tab)));
+}
+function renderIdentitySwitcher(){
+  const wrap = document.getElementById('identitySwitcher');
+  if(!wrap) return;
+  const options = [`<option value="">🔓 מצב מנהל (לא מזוהה)</option>`]
+    .concat(state.roster.map(p=>`<option value="${p.id}" ${state.currentUserId===p.id?'selected':''}>${escapeHtml(p.name)} — ${ROLE_LABEL[p.role]}</option>`));
+  wrap.innerHTML = `<span class="id-label">מחובר/ת כ:</span><select id="identity-select">${options.join('')}</select>`;
+  document.getElementById('identity-select').value = state.currentUserId || '';
+  document.getElementById('identity-select').addEventListener('change', async (e)=>{
+    state.currentUserId = e.target.value || null;
+    await StorageAPI.setCurrentUserId(state.currentUserId);
+    const allowed = getAllowedTabs();
+    state.tab = defaultTabForUser(getCurrentUser());
+    if(!allowed.includes(state.tab)) state.tab = allowed[0];
+    state.currentEnvId = null;
+    renderNavTabs();
+    render();
+    toast('זהות עודכנה — כעת מחובר/ת כ' + (getCurrentUser() ? escapeHtml(getCurrentUser().name) : 'מנהל (לא מזוהה)'));
+  });
+}
+
+function switchTab(tab){
+  if(!getAllowedTabs().includes(tab)) return; // no permission to view this interface
+  state.tab = tab;
+  renderNavTabs();
+  if(tab==='dashboard') state.currentEnvId = null;
+  if(tab==='upload' && !state.draft) resetDraft();
+  render();
+}
+async function refreshPermissionsUI(){
+  if(state.currentUserId && !state.roster.find(p=>p.id===state.currentUserId)){
+    state.currentUserId = null;
+    await StorageAPI.setCurrentUserId(null);
+  }
+  const allowed = getAllowedTabs();
+  if(!allowed.includes(state.tab)){
+    state.tab = defaultTabForUser(getCurrentUser());
+    if(!allowed.includes(state.tab)) state.tab = allowed[0];
+  }
+  renderNavTabs();
+  renderIdentitySwitcher();
+}
+
+function resetDraft(){
+  state.draft = { id: uid(), title:'', flowType:'parallel', documentName:'', documentBase64:'', pageCount:0, signerIds:[], fields:[] };
+  state.currentPage = 1; state.fieldsEnabled = false; state.placingSignerId = null;
+}
+
+function render(){
+  if(state.tab==='upload') return renderUploadPage();
+  if(state.tab==='admin') return renderAdminPage();
+  return renderDashboard();
+}
+
+/* ================= UPLOAD PAGE (single unified flow) ================= */
+function renderUploadPage(){
+  const d = state.draft;
+  let html = `<div class="page-title">העלאת מסמכים</div>
+  <div class="page-sub">העלו מסמך, בחרו את מי שצריך לחתום עליו, ובמידת הצורך מקמו את מיקום שדה החתימה על גבי המסמך.</div>`;
+
+  html += `<div class="card card-pad section-block">
+    <div class="section-heading"><span class="section-num">1</span> העלאת מסמך</div>
+    ${d.documentName ? `
+      <div class="card" style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;">
+        <div>📄 <b>${escapeHtml(d.documentName)}</b> — ${d.pageCount} עמודים</div>
+        <button class="btn btn-ghost btn-sm" id="btn-replace-doc">החלף קובץ</button>
+      </div>` : `
+      <div class="dropzone" id="dropzone">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0-11 4 4m-4-4-4 4M5 17v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="#16232B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div style="font-weight:600;">גררו קובץ PDF לכאן או לחצו לבחירה</div>
+        <div class="hint">קובץ PDF בלבד, עד 20MB</div>
+      </div>`}
+    <input type="file" id="f-file" accept="application/pdf" style="display:none">
+    ${d.documentName ? `<div class="field-group" style="margin-top:16px;"><label class="field-label">כותרת המסמך</label><input type="text" id="f-title" value="${escapeHtml(d.title)}" placeholder='לדוגמה: "הסכם התקשרות — ספק 2026"'></div>` : ''}
+  </div>`;
+
+  const sectionsEnabled = !!d.documentBase64;
+  html += `<div class="card card-pad section-block ${sectionsEnabled?'':'disabled-block'}">
+    <div class="section-heading"><span class="section-num">2</span> מי צריך לחתום?</div>
+    ${state.roster.length===0 ? `
+      <div class="hint">לא הוגדרו חותמים במערכת עדיין. <button class="btn btn-ghost btn-sm" id="btn-goto-admin">מעבר לניהול משתמשים →</button></div>
+    ` : `
+    <div class="field-group">
+      <label class="field-label">בחרו חותמים מתוך רשימת המשתמשים המורשים</label>
+      ${state.roster.map(p=>{
+        const sel = d.signerIds.includes(p.id);
+        const orderIdx = d.signerIds.indexOf(p.id);
+        return `<div class="signer-check-row ${sel?'sel':''}" data-toggle-signer="${p.id}">
+          ${d.flowType==='sequential' && sel ? `<div class="signer-order">${orderIdx+1}</div>` : `<input type="checkbox" ${sel?'checked':''} style="width:18px;height:18px;pointer-events:none;">`}
+          <div class="signer-info"><div class="nm">${escapeHtml(p.name)}</div><div class="em">${escapeHtml(p.email)} · <span class="badge ${ROLE_CLASS[p.role]}" style="padding:2px 8px;font-size:10.5px;">${ROLE_LABEL[p.role]}</span></div></div>
+          ${d.flowType==='sequential' && sel ? `
+            <button class="icon-btn" data-move-signer="-1" data-id="${p.id}" title="הזז למעלה">↑</button>
+            <button class="icon-btn" data-move-signer="1" data-id="${p.id}" title="הזז למטה">↓</button>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="field-group" style="max-width:320px;">
+      <label class="field-label">סדר חתימה</label>
+      <select id="f-flow">
+        <option value="parallel" ${d.flowType==='parallel'?'selected':''}>מקבילה — כולם חותמים יחד (ברירת מחדל)</option>
+        <option value="sequential" ${d.flowType==='sequential'?'selected':''}>טורית — לפי סדר</option>
+      </select>
+    </div>
+    `}
+  </div>`;
+
+  const signersChosen = d.signerIds.length>0;
+  html += `<div class="card card-pad section-block ${sectionsEnabled && signersChosen ? '' : 'disabled-block'}">
+    <div class="toggle-row" id="toggle-fields-row">
+      <div class="section-heading" style="margin-bottom:0;"><span class="section-num">3</span> מיקום שדה חתימה על המסמך <span style="font-weight:400;font-size:13px;color:var(--gray);margin-right:8px;">(אופציונלי — ברירת המחדל: שדה חתימה)</span></div>
+      <div class="switch ${state.fieldsEnabled?'on':''}" id="fieldsSwitch"></div>
+    </div>
+    ${!state.fieldsEnabled ? `<div class="hint" style="margin-top:8px;">אם תשאירו את זה כבוי (ברירת המחדל), כל חותם ייכנס למסמך בעצמו וילחץ במקום שבו הוא רוצה לחתום — אין צורך לקבוע זאת מראש. הפעילו את המתג רק אם אתם רוצים לקבוע בעצמכם איפה בדיוק כל אחד חותם.</div>` : renderFieldEditorSection(d)}
+  </div>`;
+
+  const canSend = sectionsEnabled && signersChosen && d.title.trim();
+  html += `<div class="card card-pad section-block">
+    <button class="btn btn-seal" id="btn-send-envelope" style="width:100%;justify-content:center;" ${canSend?'':'disabled'}>🖋 שלח מסמך לחתימה</button>
+    ${!canSend ? `<div class="hint" style="text-align:center;margin-top:8px;">נדרש: העלאת מסמך, כותרת, ולפחות חותם אחד.</div>` : ''}
+  </div>`;
+
+  app.innerHTML = html;
+  bindUploadEvents();
+  if(state.fieldsEnabled) renderPdfIntoEditor();
+}
+
+function renderFieldEditorSection(d){
+  const fieldsOnPage = d.fields.filter(f=>f.page===state.currentPage);
+  let signerOptions = d.signerIds.map(id=>{ const p=state.roster.find(r=>r.id===id); return p ? `<option value="${p.id}">${escapeHtml(p.name)}</option>` : ''; }).join('');
+  let fieldList = d.fields.map((f,i)=>{
+    const p = state.roster.find(r=>r.id===f.fieldSignerId) || {};
+    return `<div class="field-list-item"><span class="sw"></span><span style="flex:1;">חתימה · עמ' ${f.page} · ${escapeHtml(p.name||'?')}</span><button class="icon-btn" data-del-field="${i}">✕</button></div>`;
+  }).join('') || `<div class="hint">לא נוספו שדות ידניים — יוגדר שדה חתימה אוטומטי לכל חותם.</div>`;
+
+  return `
+  <div class="editor-shell" style="margin-top:16px;">
+    <div>
+      <div class="pdf-toolbar">
+        <div class="page-nav">
+          <button class="btn btn-ghost btn-sm" id="btn-prev-page">‹ הקודם</button>
+          <span>עמוד ${state.currentPage} מתוך ${d.pageCount}</span>
+          <button class="btn btn-ghost btn-sm" id="btn-next-page">הבא ›</button>
+        </div>
+        <div class="hint">${state.placingSignerId ? 'לחצו על המסמך למיקום שדה החתימה' : 'בחרו חותם, לחצו "הוסף שדה חתימה", ואז לחצו על המסמך'}</div>
+      </div>
+      <div class="pdf-stage">
+        <div class="pdf-page-wrap" id="pdfPageWrap">
+          <canvas id="pdfCanvas"></canvas>
+          ${fieldsOnPage.map((f)=>{
+            const gi = d.fields.indexOf(f);
+            const p = state.roster.find(r=>r.id===f.fieldSignerId) || {};
+            return `<div class="field-box" style="left:${f.xPct*100}%;top:${f.yPct*100}%;width:${f.wPct*100}%;height:${f.hPct*100}%;">
+              <span class="del" data-del-field="${gi}">✕</span>✍️ ${escapeHtml((p.name||'').split(' ')[0]||'')}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card card-pad" style="margin-bottom:16px;">
+        <label class="field-label">שייך לחותם</label>
+        <select id="f-field-signer-select">${signerOptions}</select>
+        <button class="btn ${state.placingSignerId ? 'btn-seal':'btn-ghost'} btn-sm" id="btn-start-place" style="width:100%;justify-content:center;margin-top:10px;">${state.placingSignerId ? 'לחצו על המסמך…' : '+ הוסף שדה חתימה'}</button>
+      </div>
+      <div class="card card-pad"><h3 style="font-size:14px;">שדות שהוגדרו (${d.fields.length})</h3>${fieldList}</div>
+    </div>
+  </div>`;
+}
+
+function bindUploadEvents(){
+  const d = state.draft;
+  const dz = document.getElementById('dropzone');
+  const fileInput = document.getElementById('f-file');
+  dz?.addEventListener('click', ()=>fileInput.click());
+  dz?.addEventListener('dragover', e=>{e.preventDefault(); dz.classList.add('drag');});
+  dz?.addEventListener('dragleave', ()=>dz.classList.remove('drag'));
+  dz?.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+  document.getElementById('btn-replace-doc')?.addEventListener('click', ()=>fileInput.click());
+  fileInput?.addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+  document.getElementById('f-title')?.addEventListener('input', e=>{ d.title=e.target.value; syncSendBtn(); });
+  document.getElementById('btn-goto-admin')?.addEventListener('click', ()=>switchTab('admin'));
+
+  document.getElementById('f-flow')?.addEventListener('change', e=>{ d.flowType=e.target.value; renderUploadPage(); });
+  document.querySelectorAll('[data-toggle-signer]').forEach(row=>row.addEventListener('click', ()=>{
+    const id = row.dataset.toggleSigner;
+    const idx = d.signerIds.indexOf(id);
+    if(idx>=0){ d.signerIds.splice(idx,1); d.fields = d.fields.filter(f=>f.fieldSignerId!==id); }
+    else d.signerIds.push(id);
+    renderUploadPage();
+  }));
+  document.querySelectorAll('[data-move-signer]').forEach(b=>b.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const id=b.dataset.id, dir=+b.dataset.moveSigner;
+    const idx=d.signerIds.indexOf(id), j=idx+dir;
+    if(j<0||j>=d.signerIds.length) return;
+    [d.signerIds[idx],d.signerIds[j]]=[d.signerIds[j],d.signerIds[idx]];
+    renderUploadPage();
+  }));
+
+  document.getElementById('toggle-fields-row')?.addEventListener('click', (e)=>{
+    if(e.target.closest('[data-toggle-signer]')) return;
+    state.fieldsEnabled = !state.fieldsEnabled;
+    state.placingSignerId = null;
+    renderUploadPage();
+  });
+
+  document.getElementById('btn-prev-page')?.addEventListener('click', (e)=>{ e.stopPropagation(); if(state.currentPage>1){ state.currentPage--; renderUploadPage(); } });
+  document.getElementById('btn-next-page')?.addEventListener('click', (e)=>{ e.stopPropagation(); if(state.currentPage<d.pageCount){ state.currentPage++; renderUploadPage(); } });
+  document.getElementById('btn-start-place')?.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const signerId = document.getElementById('f-field-signer-select')?.value;
+    if(!signerId){ toast('בחרו חותם'); return; }
+    state.placingSignerId = state.placingSignerId ? null : signerId;
+    renderUploadPage();
+  });
+  document.querySelectorAll('[data-del-field]').forEach(b=>b.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    d.fields.splice(+b.dataset.delField,1);
+    renderUploadPage();
+  }));
+  const pageWrap = document.getElementById('pdfPageWrap');
+  pageWrap?.addEventListener('click', (e)=>{
+    if(!state.placingSignerId) return;
+    if(e.target.closest('.field-box')) return;
+    const rect = pageWrap.getBoundingClientRect();
+    const xPct = (e.clientX-rect.left)/rect.width, yPct = (e.clientY-rect.top)/rect.height;
+    const wPct=0.22, hPct=0.06;
+    d.fields.push({ id:uid(), fieldSignerId: state.placingSignerId, page: state.currentPage,
+      xPct: Math.max(0,Math.min(1-wPct,xPct-wPct/2)), yPct: Math.max(0,Math.min(1-hPct,yPct-hPct/2)),
+      wPct, hPct, signatureDataUrl:'', filledAt:null });
+    state.placingSignerId = null;
+    renderUploadPage();
+  });
+
+  document.getElementById('btn-send-envelope')?.addEventListener('click', sendEnvelope);
+  syncSendBtn();
+}
+function syncSendBtn(){
+  const d = state.draft;
+  const btn = document.getElementById('btn-send-envelope');
+  if(btn) btn.disabled = !(d.documentBase64 && d.title.trim() && d.signerIds.length>0);
+}
+
+async function handleFile(file){
+  const nameLower = (file.name||'').toLowerCase();
+  const looksLikePdfExt = nameLower.endsWith('.pdf');
+  const looksLikePdfType = file.type === 'application/pdf';
+  if(!looksLikePdfExt || (file.type && !looksLikePdfType)){
+    toastError('יש להעלות קבצים בפורמט PDF בלבד. הקובץ שנבחר (' + (file.name||'ללא שם') + ') אינו PDF.');
+    const fi = document.getElementById('f-file'); if(fi) fi.value = '';
+    return;
+  }
+  if(file.size > 20*1024*1024){ toastError('הקובץ גדול מדי (מקסימום 20MB)'); return; }
+  if(usingCloudBackend && file.size > FIRESTORE_SAFE_PDF_BYTES){
+    toastError(`המסמך (${(file.size/1024).toFixed(0)}KB) גדול מדי לאחסון ב-Firestore (מגבלה ~${(FIRESTORE_SAFE_PDF_BYTES/1024).toFixed(0)}KB בתצורה הנוכחית, ללא Firebase Storage). נסו לדחוס את ה-PDF או להשתמש בקובץ קטן יותר.`);
+    return;
+  }
+  const buf = await file.arrayBuffer();
+  const base64 = bufToBase64(buf);
+  try{
+    const pdf = await pdfjsLib.getDocument({data: buf.slice(0)}).promise;
+    state.draft.documentName = file.name;
+    state.draft.documentBase64 = base64;
+    state.draft.pageCount = pdf.numPages;
+    if(!state.draft.title) state.draft.title = file.name.replace(/\.pdf$/i,'');
+    toast('המסמך נטען בהצלחה — ' + pdf.numPages + ' עמודים');
+    renderUploadPage();
+  }catch(err){ console.error(err); toastError('שגיאה בקריאת קובץ ה-PDF — ייתכן שהקובץ פגום או אינו PDF תקין.'); }
+}
+
+async function renderPdfIntoEditor(){
+  const d = state.draft;
+  if(!d.documentBase64) return;
+  const canvas = document.getElementById('pdfCanvas');
+  if(!canvas) return;
+  try{
+    const buf = base64ToBuf(d.documentBase64);
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    const page = await pdf.getPage(state.currentPage);
+    const viewport = page.getViewport({scale:1});
+    const scale = 640/viewport.width;
+    const sv = page.getViewport({scale});
+    canvas.width = sv.width; canvas.height = sv.height;
+    await page.render({canvasContext:canvas.getContext('2d'), viewport:sv}).promise;
+  }catch(err){ console.error(err); }
+}
+
+/* ================= SEND ================= */
+async function sendEnvelope(){
+  const d = state.draft;
+  const signers = d.signerIds.map(id=>{
+    const p = state.roster.find(r=>r.id===id);
+    return { id: p.id, name:p.name, email:p.email, phone:p.phone||'', internal:p.internal!==false, status:'pending', signedAt:null, declinedAt:null, declineReason:'', activatedAt:null, reminderSent:false };
+  });
+  // Fields only exist here if the sender manually placed them (section 3 toggle).
+  // Signers with no pre-placed field will choose their own signing location when they open the document.
+  const fields = d.fields.slice();
+
+  const creator = getCurrentUser();
+  const env = {
+    id: d.id, title: d.title, flowType: d.flowType,
+    documentName: d.documentName, documentBase64: d.documentBase64, pageCount: d.pageCount,
+    signers, fields, status:'Sent', createdAt: nowISO(), sentAt: nowISO(), completedAt:null,
+    finalPdfBase64:'', finalHash:'', auditLog:[],
+    createdById: creator ? creator.id : null, createdByName: creator ? creator.name : 'לא ידוע',
+  };
+  env.originalHash = await sha256(base64ToBuf(env.documentBase64));
+  addAudit(env, 'system', `המסמך "${env.title}" נוצר ונשלח לחתימה (${env.flowType==='sequential'?'טורית':'מקבילה'})`);
+  if(env.flowType==='sequential'){ if(env.signers[0]){ env.signers[0].status='active'; env.signers[0].activatedAt=nowISO(); } }
+  else { const ts=nowISO(); env.signers.forEach(s=>{ s.status='active'; s.activatedAt=ts; }); }
+
+  try{
+    await StorageAPI.saveEnvelope(env);
+  }catch(err){
+    console.error('[signflow] sendEnvelope failed', err);
+    toastError('שליחת המסמך נכשלה — ייתכן שהקובץ גדול מדי לאחסון ב-Firestore. פרטים בקונסולת הדפדפן.');
+    return;
+  }
+  await refreshEnvelopes();
+  toast('המסמך נשלח בהצלחה 🎉');
+  // התראת "הגיע תורך לחתום": בזרימה טורית — רק לחותם הראשון; בזרימה מקבילה — לכולם מיד, כי כולם פעילים מהרגע הראשון
+  if(env.flowType==='sequential'){ if(env.signers[0]) notifySignerTurn(env, env.signers[0]); }
+  else { env.signers.forEach(s=>notifySignerTurn(env, s)); }
+  resetDraft();
+  state.currentEnvId = env.id;
+  switchTab('dashboard');
+}
+function addAudit(env, actor, action){ env.auditLog.push({ ts: nowISO(), actor, action }); }
+
+/* ================= ADMIN — ROSTER & PERMISSIONS ================= */
+function renderAdminPage(){
+  adminSigDraft = state.editingPersonId ? ((state.roster.find(r=>r.id===state.editingPersonId)||{}).signatureImage || '') : '';
+  let html = `<div class="page-title">ניהול משתמשים והרשאות</div>
+  <div class="page-sub">הגדירו מראש את רשימת האנשים הרשאים להופיע כחותמים במערכת, ואת רמת ההרשאה של כל אחד — ידנית או בייבוא מקובץ Excel.</div>`;
+
+  // ---- Excel import card ----
+  html += `<div class="card card-pad section-block">
+    <div class="section-heading">📥 ייבוא רשימת משתמשים מקובץ Excel</div>
+    <div class="hint" style="margin-bottom:12px;">העמודות הנתמכות (בעברית או אנגלית, בכל סדר): <b>שם</b>, <b>טלפון</b>, <b>מייל</b>, <b>רמת הרשאה</b> (מנהל מערכת / שולח מסמכים / חותם).
+      <button class="btn btn-ghost btn-sm" id="btn-download-template" style="margin-right:8px;">⬇ הורדת תבנית לדוגמה</button>
+    </div>
+    <div class="import-dropzone" id="importDropzone">
+      <div style="font-weight:600;">גררו קובץ Excel (.xlsx/.xls/.csv) לכאן או לחצו לבחירה</div>
+      <div class="hint">קובץ אחד בכל פעם, עד 5MB</div>
+    </div>
+    <input type="file" id="f-import-file" accept=".xlsx,.xls,.csv" style="display:none">
+  </div>`;
+
+  // ---- import preview ----
+  if(state.importPreview && state.importPreview.length){
+    const includedCount = state.importPreview.filter(r=>r.include).length;
+    html += `<div class="card card-pad section-block">
+      <div class="section-heading">תצוגה מקדימה — ${state.importPreview.length} שורות זוהו מהקובץ</div>
+      <table class="roster-table"><thead><tr><th></th><th>שם</th><th>אימייל</th><th>טלפון</th><th>הרשאה</th><th>סטטוס</th></tr></thead>
+      <tbody>${state.importPreview.map((r,i)=>`
+        <tr class="import-row ${r.isDuplicate?'dup':''} ${r.include?'':'excluded'}">
+          <td><input type="checkbox" data-import-toggle="${i}" ${r.include?'checked':''}></td>
+          <td>${r.name ? escapeHtml(r.name) : '<span style="color:var(--seal);">חסר שם</span>'}</td>
+          <td>${r.email ? escapeHtml(r.email) : '<span style="color:var(--seal);">חסר אימייל</span>'}</td>
+          <td>${escapeHtml(r.phone||'—')}</td>
+          <td><select data-import-role="${i}">
+            <option value="admin" ${r.role==='admin'?'selected':''}>מנהל מערכת</option>
+            <option value="sender" ${r.role==='sender'?'selected':''}>שולח מסמכים</option>
+            <option value="signer" ${r.role==='signer'?'selected':''}>חותם</option>
+          </select></td>
+          <td>${r.isDuplicate ? '<span class="tag-update">יעודכן</span>' : '<span class="tag-new">חדש</span>'}</td>
+        </tr>`).join('')}</tbody></table>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-primary" id="btn-confirm-import" style="flex:1;justify-content:center;" ${includedCount===0?'disabled':''}>✓ ייבוא ${includedCount} משתמשים</button>
+        <button class="btn btn-ghost" id="btn-cancel-import">ביטול</button>
+      </div>
+    </div>`;
+  }
+
+  // ---- manual add + roster table ----
+  html += `<div style="display:grid;grid-template-columns:1fr 1.4fr;gap:22px;">
+    <div class="card card-pad">
+      <h3 style="font-size:16px;">${state.editingPersonId ? 'עריכת משתמש' : 'הוספת משתמש ידנית'}</h3>
+      <div class="field-group"><label class="field-label">שם מלא</label><input type="text" id="p-name" placeholder="ישראל ישראלי"></div>
+      <div class="field-group"><label class="field-label">אימייל</label><input type="email" id="p-email" placeholder="name@example.com"></div>
+      <div class="field-group"><label class="field-label">טלפון (ל-OTP)</label><input type="tel" id="p-phone" placeholder="05X-XXXXXXX"></div>
+      <div class="field-group"><label class="field-label">רמת הרשאה</label>
+        <select id="p-role">
+          <option value="admin">מנהל מערכת — ניהול משתמשים ומסמכים</option>
+          <option value="sender" selected>שולח מסמכים — יצירת מסמכים</option>
+          <option value="signer">חותם — יכול לחתום, וגם להעלות מסמכים כמשתמש רגיל</option>
+        </select>
+      </div>
+      <div class="field-group"><label class="field-label">סוג</label>
+        <select id="p-internal"><option value="1">פנימי (עובד הארגון)</option><option value="0">חיצוני</option></select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">קובץ חתימה (PNG) — אופציונלי, לשיבוץ אוטומטי בעת חתימה</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div id="sig-preview-wrap">${adminSigDraft ? `<img id="sig-preview-img" src="${adminSigDraft}" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;"><button type="button" class="btn btn-ghost btn-sm" id="btn-remove-sig">הסר</button>` : `<span class="hint">לא הועלתה חתימה</span>`}</div>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-upload-sig">העלאת PNG</button>
+        </div>
+        <input type="file" id="p-signature-file" accept="image/png" style="display:none">
+        <div class="hint">קובץ PNG עם רקע שקוף נותן את התוצאה הכי נקייה על גבי המסמך.</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" id="btn-save-person" style="flex:1;justify-content:center;">${state.editingPersonId ? 'שמור שינויים' : '+ הוסף משתמש'}</button>
+        ${state.editingPersonId ? `<button class="btn btn-ghost" id="btn-cancel-edit">ביטול</button>` : ''}
+      </div>
+    </div>
+    <div class="card card-pad">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;">
+        <h3 style="font-size:16px;margin:0;">רשימת משתמשים (${state.roster.length})</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-export-roster" ${state.roster.length===0?'disabled':''}>⬇ ייצוא לאקסל</button>
+      </div>
+      ${state.roster.length===0 ? `<div class="hint">טרם נוספו משתמשים.</div>` : `
+      <table class="roster-table"><thead><tr><th>שם</th><th>אימייל</th><th>הרשאה</th><th>סוג</th><th>חתימה</th><th></th></tr></thead>
+      <tbody>${state.roster.map(p=>`
+        <tr>
+          <td><b>${escapeHtml(p.name)}</b></td>
+          <td>${escapeHtml(p.email)}</td>
+          <td><span class="badge ${ROLE_CLASS[p.role]}">${ROLE_LABEL[p.role]}</span></td>
+          <td>${p.internal!==false?'פנימי':'חיצוני'}</td>
+          <td>${p.signatureImage ? `<img src="${p.signatureImage}" style="height:24px;border:1px solid var(--line);border-radius:4px;background:#fff;padding:2px;">` : `<span class="hint">—</span>`}</td>
+          <td style="white-space:nowrap;">
+            <button class="icon-btn" data-edit-person="${p.id}" title="עריכה">✎</button>
+            <button class="icon-btn" data-del-person="${p.id}" title="מחיקה">✕</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`}
+    </div>
+  </div>`;
+  app.innerHTML = html;
+
+  if(state.editingPersonId){
+    const p = state.roster.find(r=>r.id===state.editingPersonId);
+    if(p){
+      document.getElementById('p-name').value = p.name;
+      document.getElementById('p-email').value = p.email;
+      document.getElementById('p-phone').value = p.phone||'';
+      document.getElementById('p-role').value = p.role;
+      document.getElementById('p-internal').value = p.internal!==false ? '1':'0';
+    }
+  }
+
+  document.getElementById('btn-save-person').addEventListener('click', savePerson);
+  document.getElementById('btn-cancel-edit')?.addEventListener('click', ()=>{ state.editingPersonId=null; renderAdminPage(); });
+  document.querySelectorAll('[data-edit-person]').forEach(b=>b.addEventListener('click', ()=>{ state.editingPersonId=b.dataset.editPerson; renderAdminPage(); }));
+  document.querySelectorAll('[data-del-person]').forEach(b=>b.addEventListener('click', async ()=>{
+    if(!confirm('להסיר את המשתמש מהרשימה?')) return;
+    const delId = b.dataset.delPerson;
+    state.roster = state.roster.filter(p=>p.id!==delId);
+    await StorageAPI.deletePerson(delId);
+    await refreshPermissionsUI();
+    render();
+  }));
+
+  // ---- import bindings ----
+  document.getElementById('btn-download-template')?.addEventListener('click', downloadRosterTemplate);
+  document.getElementById('btn-export-roster')?.addEventListener('click', exportRosterToExcel);
+  const idz = document.getElementById('importDropzone');
+  const ifile = document.getElementById('f-import-file');
+  idz?.addEventListener('click', ()=>ifile.click());
+  idz?.addEventListener('dragover', e=>{ e.preventDefault(); idz.classList.add('drag'); });
+  idz?.addEventListener('dragleave', ()=>idz.classList.remove('drag'));
+  idz?.addEventListener('drop', e=>{ e.preventDefault(); idz.classList.remove('drag'); if(e.dataTransfer.files[0]) handleRosterImportFile(e.dataTransfer.files[0]); });
+  ifile?.addEventListener('change', e=>{ if(e.target.files[0]) handleRosterImportFile(e.target.files[0]); });
+
+  document.querySelectorAll('[data-import-toggle]').forEach(cb=>cb.addEventListener('change', ()=>{
+    state.importPreview[+cb.dataset.importToggle].include = cb.checked; renderAdminPage();
+  }));
+  document.querySelectorAll('[data-import-role]').forEach(sel=>sel.addEventListener('change', ()=>{
+    state.importPreview[+sel.dataset.importRole].role = sel.value;
+  }));
+  document.getElementById('btn-cancel-import')?.addEventListener('click', ()=>{ state.importPreview=null; renderAdminPage(); });
+  document.getElementById('btn-confirm-import')?.addEventListener('click', confirmRosterImport);
+
+  // ---- signature upload bindings ----
+  const sigFile = document.getElementById('p-signature-file');
+  document.getElementById('btn-upload-sig')?.addEventListener('click', ()=>sigFile.click());
+  sigFile?.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    if(file.type !== 'image/png'){ toastError('יש להעלות קובץ PNG בלבד'); sigFile.value=''; return; }
+    if(file.size > 2*1024*1024){ toastError('הקובץ גדול מדי (מקסימום 2MB)'); sigFile.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = () => { adminSigDraft = reader.result; updateSigPreview(); toast('החתימה נטענה — לחצו "שמור" כדי לשייך אותה למשתמש'); };
+    reader.readAsDataURL(file);
+  });
+  document.getElementById('btn-remove-sig')?.addEventListener('click', ()=>{ adminSigDraft=''; updateSigPreview(); });
+}
+
+function updateSigPreview(){
+  const wrap = document.getElementById('sig-preview-wrap');
+  if(!wrap) return;
+  wrap.innerHTML = adminSigDraft
+    ? `<img id="sig-preview-img" src="${adminSigDraft}" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;"><button type="button" class="btn btn-ghost btn-sm" id="btn-remove-sig">הסר</button>`
+    : `<span class="hint">לא הועלתה חתימה</span>`;
+  document.getElementById('btn-remove-sig')?.addEventListener('click', ()=>{ adminSigDraft=''; updateSigPreview(); });
+}
+
+async function savePerson(){
+  const name = document.getElementById('p-name').value.trim();
+  const email = document.getElementById('p-email').value.trim();
+  const phone = document.getElementById('p-phone').value.trim();
+  const role = document.getElementById('p-role').value;
+  const internal = document.getElementById('p-internal').value==='1';
+  const signatureImage = adminSigDraft || '';
+  if(!name || !email){ toast('נא למלא שם ואימייל'); return; }
+  let person;
+  if(state.editingPersonId){
+    person = state.roster.find(r=>r.id===state.editingPersonId);
+    Object.assign(person, {name,email,phone,role,internal,signatureImage});
+    state.editingPersonId = null;
+  } else {
+    person = { id:uid(), name, email, phone, role, internal, signatureImage };
+    state.roster.push(person);
+  }
+  adminSigDraft = '';
+  await StorageAPI.upsertPerson(person);
+  await refreshPermissionsUI();
+  toast('הרשימה עודכנה');
+  render();
+}
+
+/* ---------------- Excel roster import ---------------- */
+const HEADER_SYNONYMS = {
+  name: ['שם','שם מלא','name','full name','fullname'],
+  email: ['מייל','אימייל','דואר אלקטרוני','email','e-mail','mail'],
+  phone: ['טלפון','נייד','טלפון נייד','phone','mobile','tel','cell'],
+  role: ['הרשאה','רמת הרשאה','תפקיד','role','permission','permission level'],
+  internal: ['סוג','פנימי/חיצוני','internal','type'],
+};
+function normalizeHeader(h){ return String(h||'').trim().toLowerCase().replace(/["'\.]/g,''); }
+function matchField(headerKey){
+  const norm = normalizeHeader(headerKey);
+  for(const field in HEADER_SYNONYMS){
+    if(HEADER_SYNONYMS[field].some(syn => normalizeHeader(syn)===norm)) return field;
+  }
+  return null;
+}
+function mapRoleValue(raw){
+  const v = String(raw||'').trim().toLowerCase();
+  if(!v) return 'signer';
+  if(v.includes('מנהל') || v.includes('admin')) return 'admin';
+  if(v.includes('שולח') || v.includes('sender')) return 'sender';
+  if(v.includes('חותם') || v.includes('signer')) return 'signer';
+  return 'signer';
+}
+function mapInternalValue(raw){
+  const v = String(raw||'').trim().toLowerCase();
+  if(v.includes('חיצ') || v.includes('external')) return false;
+  return true;
+}
+
+async function handleRosterImportFile(file){
+  if(file.size > 5*1024*1024){ toast('הקובץ גדול מדי (מקסימום 5MB)'); return; }
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if(!rows.length){ toast('לא נמצאו שורות בקובץ'); return; }
+
+    // map header keys of the first row to our fields
+    const sampleKeys = Object.keys(rows[0]);
+    const fieldByHeader = {};
+    sampleKeys.forEach(h=>{ const f = matchField(h); if(f) fieldByHeader[h]=f; });
+
+    const existingEmails = new Set(state.roster.map(p=>p.email.trim().toLowerCase()));
+    const preview = rows.map(row=>{
+      const rec = {name:'', email:'', phone:'', roleRaw:'', internalRaw:''};
+      Object.keys(row).forEach(h=>{
+        const field = fieldByHeader[h];
+        if(!field) return;
+        const val = String(row[h]).trim();
+        if(field==='name') rec.name = val;
+        else if(field==='email') rec.email = val;
+        else if(field==='phone') rec.phone = val;
+        else if(field==='role') rec.roleRaw = val;
+        else if(field==='internal') rec.internalRaw = val;
+      });
+      return {
+        name: rec.name, email: rec.email, phone: rec.phone,
+        role: mapRoleValue(rec.roleRaw), internal: mapInternalValue(rec.internalRaw),
+        isDuplicate: rec.email ? existingEmails.has(rec.email.toLowerCase()) : false,
+        include: !!(rec.name && rec.email),
+      };
+    }).filter(r => r.name || r.email); // drop fully empty rows
+
+    if(!preview.length){ toast('לא זוהו שורות תקינות — ודאו שהעמודות נקראות שם/אימייל/טלפון/הרשאה'); return; }
+    state.importPreview = preview;
+    renderAdminPage();
+    toast(`זוהו ${preview.length} שורות — סמנו למי לייבא ולחצו על ״ייבוא״`);
+  }catch(err){
+    console.error(err);
+    toast('שגיאה בקריאת קובץ ה-Excel — ודאו שזהו קובץ xlsx/xls/csv תקין');
+  }
+}
+
+async function confirmRosterImport(){
+  const rows = (state.importPreview||[]).filter(r=>r.include && r.name && r.email);
+  if(!rows.length){ toast('לא נבחרו שורות לייבוא'); return; }
+  let added=0, updated=0;
+  for(const r of rows){
+    const existing = state.roster.find(p=>p.email.trim().toLowerCase()===r.email.trim().toLowerCase());
+    let person;
+    if(existing){ Object.assign(existing, {name:r.name, phone:r.phone, role:r.role, internal:r.internal}); person=existing; updated++; }
+    else { person = { id:uid(), name:r.name, email:r.email, phone:r.phone, role:r.role, internal:r.internal, signatureImage:'' }; state.roster.push(person); added++; }
+    await StorageAPI.upsertPerson(person);
+  }
+  state.importPreview = null;
+  await refreshPermissionsUI();
+  toast(`ייבוא הושלם: ${added} משתמשים חדשים, ${updated} עודכנו`);
+  render();
+}
+
+function downloadRosterTemplate(){
+  const wsData = [
+    ['שם','אימייל','טלפון','רמת הרשאה'],
+    ['ישראל ישראלי','israel@example.com','050-1234567','שולח מסמכים'],
+    ['דנה כהן','dana@example.com','052-7654321','חותם'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:20},{wch:26},{wch:16},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'משתמשים');
+  XLSX.writeFile(wb, 'תבנית-ייבוא-משתמשים.xlsx');
+}
+
+function exportRosterToExcel(){
+  if(!state.roster.length){ toast('אין משתמשים לייצוא'); return; }
+  const wsData = [['שם','אימייל','טלפון','רמת הרשאה','סוג']];
+  state.roster.forEach(p=>{
+    wsData.push([p.name, p.email, p.phone||'', ROLE_LABEL[p.role]||'חותם', p.internal!==false ? 'פנימי' : 'חיצוני']);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:22},{wch:28},{wch:16},{wch:20},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'משתמשים');
+  const dateStr = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `רשימת-משתמשים-${dateStr}.xlsx`);
+  toast(`יוצאו ${state.roster.length} משתמשים לקובץ Excel`);
+}
+
+/* ================= DASHBOARD ================= */
+function renderDashboard(){
+  if(state.currentEnvId){ renderEnvelopeDetail(); return; }
+  const cu = getCurrentUser();
+  const pushEnabled = !!(cu && cu.fcmToken);
+  let html = `<div class="page-title">מסמכים לחתימה</div><div class="page-sub">מעקב אחר כלל תהליכי החתימה הפעילים והשלמים בארגון.</div>`;
+  if(cu){
+    html += `<div class="card card-pad section-block" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div><div style="font-weight:600;font-size:14.5px;">${pushEnabled ? '🔔 התראות מופעלות במכשיר הזה' : '🔔 קבלת התראות על מסמכים'}</div>
+      <div class="hint">${pushEnabled ? 'תקבל/י התראה כשמגיע תורך לחתום, וכשמישהו חותם על מסמך ששלחת.' : 'אשר/י התראות בדפדפן הזה כדי לקבל עדכון כשמגיע תורך לחתום, או כשמישהו חותם על מסמך ששלחת.'}</div></div>
+      <button class="btn ${pushEnabled?'btn-ghost':'btn-primary'} btn-sm" id="btn-toggle-push">${pushEnabled?'בטל התראות':'הפעל התראות'}</button>
+    </div>`;
+  }
+  if(cu && cu.role==='signer'){
+    html += `<div class="card card-pad section-block" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div><div style="font-weight:600;font-size:14.5px;">רוצים להעלות מסמך משלכם לחתימה?</div><div class="hint">כחותם, יש לכם גם גישה להעלאת מסמכים חדשים — בדיוק כמו כל משתמש רגיל.</div></div>
+      <button class="btn btn-primary btn-sm" id="btn-goto-upload-from-dash">📤 מעבר להעלאת מסמכים</button>
+    </div>`;
+  }
+  if(state.envelopes.length===0){
+    html += `<div class="card empty-state">
+      <svg class="seal-icon" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#8A8478" stroke-width="1.4"/><path d="M8 12l2.5 2.5L16 9" stroke="#8A8478" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div style="font-weight:600;margin-bottom:6px;">אין עדיין מסמכים לחתימה</div>
+      <div style="font-size:13.5px;margin-bottom:18px;">התחילו על ידי העלאת מסמך לחתימה.</div>
+      <button class="btn btn-primary" id="btn-empty-new">+ העלאת מסמך</button>
+    </div>`;
+    app.innerHTML = html;
+    document.getElementById('btn-empty-new')?.addEventListener('click', ()=>switchTab('upload'));
+    document.getElementById('btn-goto-upload-from-dash')?.addEventListener('click', ()=>switchTab('upload'));
+    document.getElementById('btn-toggle-push')?.addEventListener('click', ()=> pushEnabled ? disablePushNotifications() : enablePushNotifications());
+    return;
+  }
+  html += `<div class="env-grid">` + state.envelopes.map(env=>{
+    const total = env.signers.length, signed = env.signers.filter(s=>s.status==='signed').length;
+    const pct = total ? Math.round(signed/total*100) : 0;
+    return `<div class="card env-card" data-open-env="${env.id}">
+      <div class="env-card-top"><h3>${escapeHtml(env.title)}</h3><span class="badge ${STATUS_CLASS[env.status]}"><span class="badge-dot"></span>${STATUS_LABEL[env.status]}</span></div>
+      <div class="env-meta">${escapeHtml(env.documentName)} · ${env.pageCount} עמ' · נוצר ${fmtD(env.createdAt)}</div>
+      <div class="env-meta">${signed}/${total} חתמו · זרימה ${env.flowType==='sequential'?'טורית':'מקבילה'}</div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('') + `</div>`;
+  app.innerHTML = html;
+  document.querySelectorAll('[data-open-env]').forEach(c=>c.addEventListener('click', ()=>{ state.currentEnvId=c.dataset.openEnv; render(); }));
+  document.getElementById('btn-goto-upload-from-dash')?.addEventListener('click', ()=>switchTab('upload'));
+  document.getElementById('btn-toggle-push')?.addEventListener('click', ()=> pushEnabled ? disablePushNotifications() : enablePushNotifications());
+}
+
+async function renderEnvelopeDetail(){
+  const env = await StorageAPI.getEnvelope(state.currentEnvId);
+  if(!env){ state.currentEnvId=null; renderDashboard(); return; }
+  const total = env.signers.length, signedCount = env.signers.filter(s=>s.status==='signed').length;
+  const signerRows = env.signers.map((s,i)=>{
+    const dotClass = s.status==='signed'?'signed':(s.status==='declined'?'declined':(s.status==='active'?'active':'pending'));
+    const statusText = s.status==='signed' ? `נחתם ${fmtDT(s.signedAt)}` : s.status==='declined' ? `נדחה ${fmtDT(s.declinedAt)} — ${escapeHtml(s.declineReason||'')}` : s.status==='active' ? 'ממתין לחתימתו כעת' : 'ממתין בתור';
+    const canSign = s.status==='active' && !['Completed','Voided','Declined'].includes(env.status);
+    return `<div class="signer-status-row">
+      <span class="status-dot ${dotClass}"></span>
+      <div style="flex:1;"><div style="font-weight:600;font-size:14px;">${env.flowType==='sequential'?(i+1)+'. ':''}${escapeHtml(s.name)}</div>
+      <div style="font-size:12.5px;color:var(--gray);">${escapeHtml(s.email)} · ${statusText}</div></div>
+      ${canSign ? `<button class="btn btn-seal btn-sm" data-simulate-sign="${s.id}">✍️ סימולציית חתימה</button>` : ''}
+    </div>`;
+  }).join('');
+  const auditRows = env.auditLog.slice().reverse().map(a=>`<tr><td>${fmtDT(a.ts)}</td><td>${escapeHtml(a.actor)}</td><td>${escapeHtml(a.action)}</td></tr>`).join('');
+  let downloadBtn = env.status==='Completed' && env.finalPdfBase64 ? `<button class="btn btn-seal" id="btn-download-final" style="width:100%;justify-content:center;margin-bottom:10px;">⬇ הורדת המסמך החתום</button>` : '';
+  let voidBtn = !['Completed','Voided','Declined'].includes(env.status) ? `<button class="btn btn-danger btn-sm" id="btn-void-env" style="width:100%;justify-content:center;margin-top:10px;">בטל מסמך</button>` : '';
+
+  app.innerHTML = `
+  <button class="section-nav-back" id="btn-back-dash">→ חזרה לרשימת המסמכים</button>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+    <div><div class="page-title" style="margin-bottom:2px;">${escapeHtml(env.title)}</div><div class="page-sub" style="margin-bottom:14px;">${escapeHtml(env.documentName)} · נוצר ${fmtDT(env.createdAt)}</div></div>
+    <span class="badge ${STATUS_CLASS[env.status]}" style="font-size:13px;padding:7px 16px;"><span class="badge-dot"></span>${STATUS_LABEL[env.status]}</span>
+  </div>
+  <div class="detail-grid">
+    <div class="card card-pad">
+      <h3 style="font-size:16px;">חותמים (${signedCount}/${total})</h3>${signerRows}
+      <h3 style="font-size:16px;margin-top:22px;">Audit Trail</h3>
+      <div style="max-height:280px;overflow:auto;"><table class="audit"><thead><tr><th>זמן</th><th>גורם</th><th>פעולה</th></tr></thead><tbody>${auditRows}</tbody></table></div>
+    </div>
+    <div><div class="card card-pad" style="margin-bottom:16px;">
+      ${downloadBtn}
+      <div class="stat-line"><span>סוג זרימה</span><b>${env.flowType==='sequential'?'טורית':'מקבילה'}</b></div>
+      <div class="stat-line"><span>סה"כ שדות</span><b>${env.fields.length}</b></div>
+      <div class="stat-line"><span>מספר עמודים</span><b>${env.pageCount}</b></div>
+      <div class="stat-line"><span>Hash מקור (SHA-256)</span><b class="mono">${(env.originalHash||'').slice(0,16)}…</b></div>
+      ${env.finalHash ? `<div class="stat-line"><span>Hash מסמך חתום</span><b class="mono">${env.finalHash.slice(0,16)}…</b></div>` : ''}
+      ${voidBtn}
+    </div></div>
+  </div>`;
+
+  document.getElementById('btn-back-dash')?.addEventListener('click', ()=>{ state.currentEnvId=null; render(); });
+  document.getElementById('btn-void-env')?.addEventListener('click', async ()=>{
+    if(!confirm('לבטל את המסמך? לא ניתן לשחזר.')) return;
+    env.status='Voided'; addAudit(env,'Sender','המסמך בוטל על ידי היוזם');
+    await StorageAPI.saveEnvelope(env); await refreshEnvelopes(); render();
+  });
+  document.getElementById('btn-download-final')?.addEventListener('click', ()=>{ downloadBase64Pdf(env.finalPdfBase64, env.documentName.replace(/\.pdf$/i,'')+'-חתום.pdf'); });
+  document.querySelectorAll('[data-simulate-sign]').forEach(b=>b.addEventListener('click', ()=>openSignModal(env.id, b.dataset.simulateSign)));
+}
+function downloadBase64Pdf(base64, filename){
+  const buf = base64ToBuf(base64); const blob = new Blob([buf], {type:'application/pdf'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download=filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+
+/* ================= SIGN MODAL (signature only) ================= */
+function openSignModal(envId, signerId){
+  state.signModal = { envId, signerId, step:'otp', otp:String(Math.floor(100000+Math.random()*900000)), sigDataUrl:'' };
+  renderSignModal();
+}
+function closeSignModal(){ state.signModal=null; document.getElementById('signModalOverlay')?.remove(); }
+
+async function renderSignModal(){
+  const sm = state.signModal;
+  const env = await StorageAPI.getEnvelope(sm.envId);
+  const signer = env.signers.find(s=>s.id===sm.signerId);
+  const myFields = env.fields.filter(f=>f.fieldSignerId===sm.signerId).sort((a,b)=> a.page-b.page || a.yPct-b.yPct);
+  let overlay = document.getElementById('signModalOverlay');
+  if(!overlay){ overlay = document.createElement('div'); overlay.className='modal-overlay'; overlay.id='signModalOverlay'; document.body.appendChild(overlay); }
+
+  let bodyHtml = '';
+  if(sm.step==='otp') bodyHtml = otpStepHtml(signer);
+  else if(sm.step==='place') bodyHtml = placeStepHtml(env, signer);
+  else if(sm.step==='fill') bodyHtml = fillStepHtml(env, signer, myFields);
+  else if(sm.step==='confirm') bodyHtml = confirmStepHtml(signer);
+  else if(sm.step==='done') bodyHtml = doneStepHtml();
+
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-head"><div><div style="font-weight:700;font-family:var(--serif);font-size:18px;">חתימה על מסמך</div>
+    <div style="font-size:12.5px;color:var(--gray);">${escapeHtml(env.title)} — ${escapeHtml(signer.name)}</div></div>
+    <button class="icon-btn" id="btn-close-modal" style="font-size:18px;">✕</button></div>
+    <div class="modal-body">${bodyHtml}</div>
+    ${sm.step!=='done' ? `<div class="modal-foot" id="modalFoot"></div>` : ''}
+  </div>`;
+  document.getElementById('btn-close-modal')?.addEventListener('click', closeSignModal);
+  if(sm.step==='otp') bindOtpStep(env, signer);
+  if(sm.step==='place') bindPlaceStep(env, signer);
+  if(sm.step==='fill') bindFillStep(env, signer, myFields);
+  if(sm.step==='confirm') bindConfirmStep(env, signer, myFields);
+  if(sm.step==='done') bindDoneStep();
+}
+
+function otpStepHtml(signer){
+  const sm = state.signModal;
+  return `<div class="otp-demo-note">🔐 קוד אימות (OTP) הודגם כאן לצורך הדגמה — בסביבת ייצור הוא היה נשלח ל-${escapeHtml(signer.email)} באמצעות SMS/WhatsApp/Email.
+  <div style="margin-top:6px;font-weight:700;letter-spacing:3px;font-size:16px;">${sm.otp}</div></div>
+  <div class="field-group"><label class="field-label">הזינו את הקוד בן 6 הספרות</label>
+  <div class="otp-boxes">${[0,1,2,3,4,5].map(i=>`<input maxlength="1" inputmode="numeric" class="otp-digit" data-i="${i}">`).join('')}</div>
+  <div class="hint" id="otp-error" style="color:var(--seal);text-align:center;"></div></div>`;
+}
+function bindOtpStep(env, signer){
+  const sm = state.signModal;
+  const digits = document.querySelectorAll('.otp-digit');
+  digits.forEach((el,i)=>{
+    el.addEventListener('input', ()=>{ el.value=el.value.replace(/\D/g,'').slice(0,1); if(el.value && digits[i+1]) digits[i+1].focus(); });
+    el.addEventListener('keydown', (e)=>{ if(e.key==='Backspace' && !el.value && digits[i-1]) digits[i-1].focus(); });
+  });
+  const foot = document.getElementById('modalFoot');
+  foot.innerHTML = `<button class="btn btn-ghost" id="btn-otp-autofill">מילוי אוטומטי (הדגמה)</button><button class="btn btn-primary" id="btn-otp-verify">אמת והמשך →</button>`;
+  document.getElementById('btn-otp-autofill').addEventListener('click', ()=>{ sm.otp.split('').forEach((ch,i)=>digits[i].value=ch); });
+  document.getElementById('btn-otp-verify').addEventListener('click', async ()=>{
+    const entered = Array.from(digits).map(d=>d.value).join('');
+    if(entered !== sm.otp){ document.getElementById('otp-error').textContent='קוד שגוי, נסו שוב.'; return; }
+    addAudit(env, signer.name, 'זהות אומתה באמצעות OTP ומסמך נפתח לצפייה');
+    await StorageAPI.saveEnvelope(env);
+    const myFields = env.fields.filter(f=>f.fieldSignerId===signer.id);
+    if(myFields.length>0){ sm.step='fill'; }
+    else { sm.step='place'; sm.placePage = 1; }
+    renderSignModal();
+  });
+}
+
+function placeStepHtml(env, signer){
+  const sm = state.signModal;
+  return `
+  <div class="otp-demo-note" style="background:var(--moss-soft);border-color:#BFDBCF;color:#1f4438;">✍️ לחצו על המסמך במקום המדויק שבו תרצו לחתום. ניתן לדפדף בין העמודים אם המסמך כולל יותר מעמוד אחד.</div>
+  <div class="pdf-toolbar">
+    <div class="page-nav">
+      <button class="btn btn-ghost btn-sm" id="btn-modal-prev-page">‹ הקודם</button>
+      <span>עמוד ${sm.placePage} מתוך ${env.pageCount}</span>
+      <button class="btn btn-ghost btn-sm" id="btn-modal-next-page">הבא ›</button>
+    </div>
+  </div>
+  <div class="pdf-stage" style="max-height:440px;">
+    <div class="pdf-page-wrap" id="modalPdfPageWrap" style="cursor:crosshair;">
+      <canvas id="modalPdfCanvas"></canvas>
+    </div>
+  </div>`;
+}
+async function renderModalPdfPage(env, pageNum){
+  const canvas = document.getElementById('modalPdfCanvas');
+  if(!canvas) return;
+  try{
+    const buf = base64ToBuf(env.documentBase64);
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({scale:1});
+    const scale = 620/viewport.width;
+    const sv = page.getViewport({scale});
+    canvas.width = sv.width; canvas.height = sv.height;
+    await page.render({canvasContext:canvas.getContext('2d'), viewport:sv}).promise;
+  }catch(err){ console.error(err); }
+}
+function bindPlaceStep(env, signer){
+  const sm = state.signModal;
+  renderModalPdfPage(env, sm.placePage);
+  document.getElementById('btn-modal-prev-page')?.addEventListener('click', ()=>{ if(sm.placePage>1){ sm.placePage--; renderSignModal(); } });
+  document.getElementById('btn-modal-next-page')?.addEventListener('click', ()=>{ if(sm.placePage<env.pageCount){ sm.placePage++; renderSignModal(); } });
+  const wrap = document.getElementById('modalPdfPageWrap');
+  wrap?.addEventListener('click', async (e)=>{
+    const rect = wrap.getBoundingClientRect();
+    const xPct = (e.clientX-rect.left)/rect.width, yPct = (e.clientY-rect.top)/rect.height;
+    const wPct=0.22, hPct=0.06;
+    const field = { id:uid(), fieldSignerId:signer.id, page: sm.placePage,
+      xPct: Math.max(0,Math.min(1-wPct,xPct-wPct/2)), yPct: Math.max(0,Math.min(1-hPct,yPct-hPct/2)),
+      wPct, hPct, signatureDataUrl:'', filledAt:null };
+    env.fields.push(field);
+    addAudit(env, signer.name, `בחר/ה מיקום חתימה חופשי בעמוד ${sm.placePage}`);
+    await StorageAPI.saveEnvelope(env);
+    sm.step='fill';
+    renderSignModal();
+  });
+  const foot = document.getElementById('modalFoot');
+  foot.innerHTML = `<button class="btn btn-ghost" id="btn-decline-place">סרב לחתום</button>`;
+  document.getElementById('btn-decline-place').addEventListener('click', async ()=>{
+    const reason = prompt('נא לציין סיבת דחייה:');
+    if(reason===null) return;
+    signer.status='declined'; signer.declinedAt=nowISO(); signer.declineReason=reason||'לא צוינה סיבה';
+    env.status='Declined';
+    addAudit(env, signer.name, 'החותם דחה את בקשת החתימה: '+(reason||'—'));
+    await StorageAPI.saveEnvelope(env); closeSignModal(); await refreshEnvelopes(); render();
+  });
+}
+
+function fillStepHtml(env, signer, myFields){
+  const person = state.roster.find(r=>r.id===signer.id);
+  const hasSaved = !!(person && person.signatureImage);
+  return `<div style="max-height:60vh;overflow:auto;">
+  ${myFields.length>1 ? `<div class="hint" style="margin-bottom:10px;">נדרשות ${myFields.length} חתימות במסמך זה, לפי הסדר הבא:</div>` : ''}
+  ${hasSaved ? `<div class="otp-demo-note" style="background:var(--moss-soft);border-color:#BFDBCF;color:#1f4438;">נמצאה חתימה שמורה עבורך במערכת — ניתן להדביק אותה אוטומטית בכל שדה, או לצייר חתימה חדשה.</div>` : ''}
+  ${myFields.map((f,idx)=>{
+    const gi = env.fields.indexOf(f);
+    return `<div class="field-group" style="border:1px solid var(--line);border-radius:10px;padding:14px;background:#FBFAF6;">
+      <label class="field-label">✍️ חתימה נדרשת ${myFields.length>1 ? '#'+(idx+1)+' — ' : ''}עמוד ${f.page} מתוך ${env.pageCount}</label>
+      <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:none;">
+          <canvas id="fieldPreview-${gi}" class="field-preview-canvas" style="width:150px;border:1px solid var(--line);border-radius:6px;display:block;background:#fff;"></canvas>
+          <div class="hint" style="text-align:center;margin-top:4px;">מיקום החתימה במסמך</div>
+        </div>
+        <div style="flex:1;min-width:260px;">
+          <div class="sig-pad-wrap"><canvas id="sigCanvas-${gi}" width="680" height="180"></canvas><div class="sig-baseline"></div></div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" data-clear-sig="${gi}">נקה חתימה</button>
+            ${hasSaved ? `<button class="btn btn-seal btn-sm" data-insert-saved-sig="${gi}">🖋 הדבק חתימה שמורה</button>` : ''}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('')}
+  </div>`;
+}
+async function renderFieldPreviewThumbnail(env, field, canvasId){
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  try{
+    const buf = base64ToBuf(env.documentBase64);
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    const page = await pdf.getPage(field.page);
+    const viewport = page.getViewport({scale:1});
+    const targetW = 300;
+    const scale = targetW/viewport.width;
+    const sv = page.getViewport({scale});
+    canvas.width = sv.width; canvas.height = sv.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({canvasContext:ctx, viewport:sv}).promise;
+    const bx = field.xPct*canvas.width, by = field.yPct*canvas.height, bw = field.wPct*canvas.width, bh = field.hPct*canvas.height;
+    ctx.fillStyle = 'rgba(168,64,47,0.22)';
+    ctx.fillRect(bx,by,bw,bh);
+    ctx.strokeStyle = '#A8402F'; ctx.lineWidth = Math.max(2, canvas.width*0.008);
+    ctx.strokeRect(bx,by,bw,bh);
+  }catch(err){ console.error('field preview render error', err); }
+}
+function drawSavedSignatureIntoCanvas(canvas, dataUrl, onChange){
+  const img = new Image();
+  img.onload = () => {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const pad = 14;
+    const maxW = canvas.width - pad*2, maxH = canvas.height - pad*2;
+    const scale = Math.min(maxW/img.width, maxH/img.height, 1);
+    const dw = img.width*scale, dh = img.height*scale;
+    const dx = (canvas.width-dw)/2, dy = (canvas.height-dh)/2;
+    ctx.drawImage(img, dx, dy, dw, dh);
+    onChange(canvas.toDataURL('image/png'));
+  };
+  img.onerror = () => toastError('שגיאה בטעינת החתימה השמורה');
+  img.src = dataUrl;
+}
+function bindFillStep(env, signer, myFields){
+  const sm = state.signModal;
+  const person = state.roster.find(r=>r.id===signer.id);
+  const values = {};
+  myFields.forEach(f=>{
+    const gi = env.fields.indexOf(f);
+    const canvas = document.getElementById('sigCanvas-'+gi);
+    if(!canvas) return;
+    renderFieldPreviewThumbnail(env, f, 'fieldPreview-'+gi);
+    setupSignaturePad(canvas, dataUrl => { values[gi]=dataUrl; });
+    document.querySelector(`[data-clear-sig="${gi}"]`)?.addEventListener('click', ()=>{
+      canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); values[gi]='';
+    });
+    document.querySelector(`[data-insert-saved-sig="${gi}"]`)?.addEventListener('click', ()=>{
+      if(!person || !person.signatureImage) return;
+      drawSavedSignatureIntoCanvas(canvas, person.signatureImage, dataUrl => { values[gi]=dataUrl; });
+    });
+  });
+  const foot = document.getElementById('modalFoot');
+  foot.innerHTML = `<button class="btn btn-ghost" id="btn-decline">סרב לחתום</button><button class="btn btn-primary" id="btn-fill-continue">המשך לאישור →</button>`;
+  document.getElementById('btn-decline').addEventListener('click', async ()=>{
+    const reason = prompt('נא לציין סיבת דחייה:');
+    if(reason===null) return;
+    signer.status='declined'; signer.declinedAt=nowISO(); signer.declineReason=reason||'לא צוינה סיבה';
+    env.status='Declined';
+    addAudit(env, signer.name, 'החותם דחה את בקשת החתימה: '+(reason||'—'));
+    await StorageAPI.saveEnvelope(env); closeSignModal(); await refreshEnvelopes(); render();
+  });
+  document.getElementById('btn-fill-continue').addEventListener('click', ()=>{
+    for(const f of myFields){ const gi=env.fields.indexOf(f); if(!values[gi]){ toast('נא לצייר חתימה בכל שדה'); return; } }
+    sm.fieldValues = values; sm.step='confirm'; renderSignModal();
+  });
+}
+function setupSignaturePad(canvas, onChange){
+  const ctx = canvas.getContext('2d'); ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.strokeStyle='#16232B';
+  let drawing=false, lastX=0, lastY=0;
+  function pos(e){ const r=canvas.getBoundingClientRect(); const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left; const cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top; return {x:cx*(canvas.width/r.width), y:cy*(canvas.height/r.height)}; }
+  function start(e){ drawing=true; const p=pos(e); lastX=p.x; lastY=p.y; e.preventDefault(); }
+  function move(e){ if(!drawing) return; const p=pos(e); ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(p.x,p.y); ctx.stroke(); lastX=p.x; lastY=p.y; e.preventDefault(); }
+  function end(){ if(drawing){ drawing=false; onChange(canvas.toDataURL('image/png')); } }
+  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false}); canvas.addEventListener('touchmove', move, {passive:false}); canvas.addEventListener('touchend', end);
+}
+
+function confirmStepHtml(signer){
+  return `<p style="font-size:14px;line-height:1.7;">בלחיצה על "אשר וחתום" אני, <b>${escapeHtml(signer.name)}</b>, מאשר/ת כי קראתי את המסמך, וכי החתימה שסופקה על ידי מהווה הסכמה מחייבת לתוכנו, בהתאם לחוק חתימה אלקטרונית. פעולה זו תתועד עם חותמת זמן, וכל שינוי עתידי במסמך יזוהה אוטומטית.</p>
+  <div class="checklist-item"><input type="checkbox" id="chk-confirm-legal"><label for="chk-confirm-legal">קראתי ואני מסכים/ה לתנאים לעיל</label></div>`;
+}
+function bindConfirmStep(env, signer, myFields){
+  const sm = state.signModal;
+  const foot = document.getElementById('modalFoot');
+  foot.innerHTML = `<button class="btn btn-ghost" id="btn-back-fill">→ חזרה למילוי</button><button class="btn btn-seal" id="btn-final-sign" disabled>אשר וחתום ✒</button>`;
+  const chk = document.getElementById('chk-confirm-legal'); const btn = document.getElementById('btn-final-sign');
+  chk.addEventListener('change', ()=>{ btn.disabled=!chk.checked; });
+  document.getElementById('btn-back-fill').addEventListener('click', ()=>{ sm.step='fill'; renderSignModal(); });
+  btn.addEventListener('click', async ()=>{
+    btn.disabled=true; btn.innerHTML='<span class="spinner"></span> מטמיע חתימה...';
+    await finalizeSignature(env, signer, myFields);
+  });
+}
+async function findPendingEnvelopesForSigner(signerId, excludeEnvId){
+  const ids = await StorageAPI.listEnvelopeIds();
+  const pending = [];
+  for(const id of ids){
+    if(id===excludeEnvId) continue;
+    const e = await StorageAPI.getEnvelope(id);
+    if(!e) continue;
+    if(['Completed','Voided','Declined'].includes(e.status)) continue;
+    const s = e.signers.find(x=>x.id===signerId);
+    if(s && s.status==='active') pending.push({ id:e.id, title:e.title });
+  }
+  return pending;
+}
+
+async function finalizeSignature(env, signer, myFields){
+  const sm = state.signModal;
+  try{
+    myFields.forEach(f=>{ const gi=env.fields.indexOf(f); const val=sm.fieldValues[gi]; if(val){ f.signatureDataUrl=val; f.filledAt=nowISO(); } });
+    signer.status='signed'; signer.signedAt=nowISO();
+    addAudit(env, signer.name, 'המסמך נחתם על ידי החותם');
+    let nextSigner = null;
+    if(env.flowType==='sequential'){
+      const idx = env.signers.findIndex(s=>s.id===signer.id); const next=env.signers[idx+1];
+      if(next){ next.status='active'; next.activatedAt=nowISO(); addAudit(env,'system', `המסמך הועבר לחותם הבא: ${next.name}`); env.status='InProgress'; nextSigner=next; }
+    } else { env.status = env.signers.some(s=>s.status!=='signed') ? 'InProgress' : env.status; }
+    const allSigned = env.signers.every(s=>s.status==='signed');
+    await StorageAPI.saveEnvelope(env);
+    notifyOwnerSigned(env, signer); // עדכון לבעל המסמך שהתקבלה חתימה
+    if(nextSigner) notifySignerTurn(env, nextSigner); // הגיע תורו של החותם הבא בזרימה טורית
+    if(allSigned){
+      await generateFinalPdf(env);
+      env.status='Completed'; env.completedAt=nowISO();
+      addAudit(env,'system','כלל החותמים השלימו — מסמך חתום סופי הופק וארכב');
+      await StorageAPI.saveEnvelope(env);
+      notifyOwnerCompleted(env); // עדכון לבעל המסמך שהמסמך הושלם
+    }
+    await refreshEnvelopes();
+    sm.nextPending = await findPendingEnvelopesForSigner(signer.id, env.id);
+    sm.step='done'; renderSignModal();
+  }catch(err){
+    console.error('[signflow] finalizeSignature failed', err);
+    toastError('שמירת החתימה נכשלה — ייתכן שהמסמך גדול מדי לאחסון ב-Firestore. פרטים בקונסולת הדפדפן.');
+    closeSignModal();
+    render();
+  }
+}
+function doneStepHtml(){
+  const sm = state.signModal;
+  const nextList = sm.nextPending || [];
+  return `<div style="text-align:center;padding:10px 0 6px;"><div class="seal-stamp">נחתם<br>בהצלחה</div>
+  <h3 style="font-size:18px;">החתימה נקלטה בהצלחה</h3>
+  <p style="font-size:13.5px;color:var(--ink-soft);">התיעוד נשמר ב-Audit Trail של המסמך.</p>
+  ${nextList.length ? `
+  <div class="otp-demo-note" style="background:var(--amber-soft);border-color:#E4CE9C;color:#5C4318;text-align:right;margin-top:18px;">
+    <b>תזכורת:</b> יש לך עוד ${nextList.length} מסמכ${nextList.length>1?'ים':''} שממתינ${nextList.length>1?'ים':'ה'} לחתימתך:
+    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+      ${nextList.map(n=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff;border:1px solid #E4CE9C;border-radius:8px;padding:8px 12px;">
+        <span style="font-size:13px;font-weight:600;">${escapeHtml(n.title)}</span>
+        <button class="btn btn-seal btn-sm" data-sign-next="${n.id}">חתום עכשיו ←</button>
+      </div>`).join('')}
+    </div>
+  </div>` : ''}
+  </div>`;
+}
+function bindDoneStep(){
+  const sm = state.signModal;
+  const signerIdForNext = sm.signerId;
+  const modal = document.querySelector('.modal');
+  const row = document.createElement('div'); row.className='modal-foot';
+  row.innerHTML = `<button class="btn btn-primary" id="btn-done-close" style="width:100%;justify-content:center;">סגור</button>`;
+  modal.appendChild(row);
+  document.getElementById('btn-done-close').addEventListener('click', ()=>{ closeSignModal(); render(); });
+  document.querySelectorAll('[data-sign-next]').forEach(b=>b.addEventListener('click', ()=>{
+    const nextEnvId = b.dataset.signNext;
+    closeSignModal();
+    goToEnvelopeAndSign(nextEnvId, signerIdForNext);
+  }));
+}
+function goToEnvelopeAndSign(envId, signerId){
+  if(getAllowedTabs().includes('dashboard')){ state.tab = 'dashboard'; renderNavTabs(); }
+  state.currentEnvId = envId;
+  render();
+  openSignModal(envId, signerId);
+}
+
+/* ================= HEBREW-SAFE TEXT RENDERING FOR CERTIFICATE PAGE ================= */
+async function renderCertificatePageImages(env){
+  await (document.fonts && document.fonts.ready);
+  const W=1240, H=1754;
+  const pageImgs = [];
+  let lines = [];
+  lines.push({t:'תעודת השלמת חתימה  |  Certificate of Completion', size:30, weight:800, gap:46});
+  lines.push({t:'כותרת: '+env.title, size:18, weight:600, gap:30});
+  lines.push({t:'מסמך: '+env.documentName, size:15, weight:400, gap:26});
+  lines.push({t:'נוצר: '+fmtDT(env.createdAt)+'   |   הושלם: '+fmtDT(env.completedAt||nowISO()), size:14, weight:400, gap:24});
+  lines.push({t:'סוג זרימה: '+(env.flowType==='sequential'?'טורית':'מקבילה'), size:14, weight:400, gap:34});
+  lines.push({t:'חותמים:', size:17, weight:700, gap:30});
+  env.signers.forEach(s=>{ lines.push({t:'• '+s.name+'   <'+s.email+'>   נחתם: '+fmtDT(s.signedAt), size:13, weight:400, gap:22}); });
+  lines.push({t:' ', size:10, weight:400, gap:14});
+  lines.push({t:'Audit Trail:', size:17, weight:700, gap:30});
+  env.auditLog.forEach(a=>{ lines.push({t:fmtDT(a.ts)+'  —  '+a.actor+'  —  '+a.action, size:11.5, weight:400, gap:20, muted:true}); });
+  lines.push({t:' ', size:10, weight:400, gap:10});
+  lines.push({t:'Hash מסמך מקורי (SHA-256): '+(env.originalHash||''), size:9.5, weight:400, gap:18, muted:true, mono:true});
+
+  const margin=70; let idx=0;
+  while(idx<lines.length){
+    const canvas=document.createElement('canvas'); canvas.width=W; canvas.height=H;
+    const ctx=canvas.getContext('2d'); ctx.fillStyle='#FFFFFF'; ctx.fillRect(0,0,W,H);
+    ctx.direction='rtl'; ctx.textAlign='right'; ctx.textBaseline='top';
+    let y=margin;
+    while(idx<lines.length && y<H-margin){
+      const ln=lines[idx];
+      ctx.font=`${ln.weight} ${ln.size*2}px ${ln.mono?'monospace':'Heebo, Arial'}`;
+      ctx.fillStyle = ln.muted ? '#5C6B72' : '#16232B';
+      ctx.fillText(ln.t, W-margin, y);
+      y += ln.gap*2; idx++;
+    }
+    pageImgs.push(canvas.toDataURL('image/png'));
+  }
+  return pageImgs;
+}
+
+/* ================= FINAL PDF GENERATION (signature-only fields) ================= */
+async function generateFinalPdf(env){
+  try{
+    const srcBytes = base64ToBuf(env.documentBase64);
+    const pdfDoc = await PDFDocument.load(srcBytes);
+    const pages = pdfDoc.getPages();
+    for(const f of env.fields){
+      if(!f.signatureDataUrl) continue;
+      const page = pages[f.page-1]; if(!page) continue;
+      const { width, height } = page.getSize();
+      const boxX=f.xPct*width, boxYTop=f.yPct*height, boxW=f.wPct*width, boxH=f.hPct*height;
+      const boxYBottom = height - boxYTop - boxH;
+      try{
+        const pngBytes = base64ToBuf(f.signatureDataUrl.split(',')[1]);
+        const pngImage = await pdfDoc.embedPng(pngBytes);
+        page.drawImage(pngImage, { x:boxX, y:boxYBottom, width:boxW, height:boxH });
+      }catch(e){ console.error('sig embed error', e); }
+    }
+    const certImgs = await renderCertificatePageImages(env);
+    for(const dataUrl of certImgs){
+      const pngBytes = base64ToBuf(dataUrl.split(',')[1]);
+      const pngImage = await pdfDoc.embedPng(pngBytes);
+      const p = pdfDoc.addPage([595.28, 841.89]);
+      p.drawImage(pngImage, {x:0,y:0,width:595.28,height:841.89});
+    }
+    const outBytes = await pdfDoc.save();
+    env.finalPdfBase64 = bufToBase64(outBytes);
+    env.finalHash = await sha256(outBytes);
+    if(usingCloudBackend && outBytes.byteLength > FIRESTORE_SAFE_PDF_BYTES){
+      toastError('המסמך החתום הסופי גדול מדי לשמירה ב-Firestore — הוא זמין להורדה בסשן הנוכחי, אך לא יסתנכרן לענן. שקלו לעבור ל-Firebase Storage למסמכים גדולים.');
+    }
+  }catch(err){ console.error('final pdf generation failed', err); toast('שגיאה בהפקת המסמך הסופי — נא לבדוק את קונסולת הדפדפן'); }
+}
+
+init();
+</script>
+</body>
+</html>
