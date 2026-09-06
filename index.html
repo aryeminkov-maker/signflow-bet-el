@@ -110,8 +110,8 @@ table.audit tr:last-child td{border-bottom:none;}
 .modal{background:var(--paper-raised);border-radius:14px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);}
 .modal-head{padding:20px 26px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
 .modal-body{padding:24px 26px;} .modal-foot{padding:16px 26px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;}
-.otp-boxes{display:flex;gap:8px;direction:ltr;justify-content:center;margin:18px 0;}
-.otp-boxes input{width:44px;height:52px;text-align:center;font-size:22px;font-weight:700;}
+.auth-gate{position:fixed;inset:0;z-index:9999;background:var(--paper);display:flex;align-items:center;justify-content:center;padding:20px;}
+.auth-gate-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:36px 32px;max-width:400px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.08);}
 .otp-demo-note{background:var(--amber-soft);border:1px solid #E4CE9C;border-radius:8px;padding:12px 14px;font-size:13px;color:#5C4318;margin-bottom:14px;}
 .sig-pad-wrap{border:1.5px dashed var(--line);border-radius:10px;background:#fff;position:relative;}
 .sig-pad-wrap canvas{width:100%;height:180px;display:block;cursor:crosshair;touch-action:none;}
@@ -152,7 +152,6 @@ table.audit tr:last-child td{border-bottom:none;}
 </style>
 </head>
 <body>
-<div class="demo-banner">🔧 מצב הדגמה מקומית: אין שרת SMS/Email אמיתי — קודי אימות ותהליך החתימה מוצגים בתוך האפליקציה לצורך סימולציה מלאה. מסמכים, חתימות, הרשאות ו-Audit Trail — אמיתיים ונשמרים.</div>
 <div class="demo-banner" id="backendBadge" style="background:#F1EFE8;border-bottom:1px solid var(--line);"></div>
 <header class="topbar">
   <div class="topbar-inner">
@@ -278,7 +277,9 @@ async function tryInitFirebase(){
     fbApp = initializeApp(firebaseConfig);
     fbDb = firestoreMod.getFirestore(fbApp);
     fbAuth = authMod.getAuth(fbApp);
-    await authMod.signInAnonymously(fbAuth); // anonymous identity so Firestore rules can require auth != null
+    // No anonymous sign-in anymore: real identity now comes from Google Sign-In
+    // (see listenForAuthChanges / signInWithGoogle below), which already satisfies
+    // Firestore's "request.auth != null" rule on its own.
     window.__fb = { firestoreMod, authMod }; // keep module refs reachable for CloudStorageAPI below
     console.info('[signflow] Connected to Firebase project (Firestore only, free Spark plan):', firebaseConfig.projectId);
     return true;
@@ -287,6 +288,19 @@ async function tryInitFirebase(){
     toastError('החיבור ל-Firebase נכשל — עובד במצב מקומי בלבד. פרטים בקונסולת הדפדפן.');
     return false;
   }
+}
+
+async function signInWithGoogle(){
+  try{
+    const { GoogleAuthProvider, signInWithPopup } = window.__fb.authMod;
+    await signInWithPopup(fbAuth, new GoogleAuthProvider());
+  }catch(err){
+    console.error('[signflow] Google sign-in failed', err);
+    toastError('ההתחברות עם Google נכשלה: ' + err.message);
+  }
+}
+async function signOutUser(){
+  try{ await window.__fb.authMod.signOut(fbAuth); }catch(err){ console.error('[signflow] sign-out failed', err); }
 }
 
 /* PDFs are stored directly inside the Firestore document (base64) so the whole
@@ -454,6 +468,8 @@ let state = {
   fieldsEnabled: false,
   placingSignerId: null,
   signModal: null,
+  authUser: null,      // raw Firebase Auth user (cloud mode only)
+  realPersonId: null,  // roster id matched to authUser.email — the true logged-in identity
   importPreview: null, // array of parsed rows awaiting confirmation
   currentUserId: null, // demo identity — who is "logged in" right now, drives permission-based UI
 };
@@ -463,7 +479,13 @@ const app = document.getElementById('app');
 
 async function init(){
   usingCloudBackend = await tryInitFirebase();
-  if(usingCloudBackend){ StorageAPI = CloudStorageAPI; }
+  if(usingCloudBackend){
+    StorageAPI = CloudStorageAPI;
+    renderBackendBadge();
+    listenForAuthChanges(); // the rest of the app boots inside this callback, once we know who's signed in
+    return;
+  }
+  // local fallback (no Firebase configured / connection failed) — unchanged demo behavior
   renderBackendBadge();
   await refreshEnvelopes();
   await refreshRoster();
@@ -475,7 +497,71 @@ async function init(){
   renderNavTabs();
   renderIdentitySwitcher();
   render();
-  if(usingCloudBackend) attachRealtimeListeners();
+}
+
+/* ---------------- Google Sign-In gate (cloud mode only) ----------------
+   Real identity now comes from the signed-in Google account's email, matched
+   against the roster. No match → blocked with a clear message (an admin needs
+   to add that email to the roster first). System admins additionally get the
+   old "מחובר/ת כ:" dropdown, purely as a client-side impersonation view for
+   testing/support — their real Firestore writes are still authenticated as
+   themselves either way. */
+let realtimeAttached = false;
+function listenForAuthChanges(){
+  const { onAuthStateChanged } = window.__fb.authMod;
+  onAuthStateChanged(fbAuth, async (user)=>{
+    state.authUser = user;
+    if(!user){
+      state.realPersonId = null; state.currentUserId = null;
+      renderAuthGate('signedOut');
+      return;
+    }
+    await refreshRoster();
+    const email = (user.email||'').trim().toLowerCase();
+    const match = state.roster.find(p=>(p.email||'').trim().toLowerCase()===email);
+    if(!match){
+      state.realPersonId = null; state.currentUserId = null;
+      renderAuthGate('notRegistered', user.email);
+      return;
+    }
+    state.realPersonId = match.id;
+    state.currentUserId = match.id;
+    await refreshEnvelopes();
+    resetDraft();
+    const allowed = getAllowedTabs();
+    state.tab = defaultTabForUser(getCurrentUser());
+    if(!allowed.includes(state.tab)) state.tab = allowed[0];
+    hideAuthGate();
+    renderNavTabs();
+    renderIdentitySwitcher();
+    render();
+    if(!realtimeAttached){ attachRealtimeListeners(); realtimeAttached = true; }
+  });
+}
+function renderAuthGate(kind, email){
+  let gate = document.getElementById('authGate');
+  if(!gate){ gate = document.createElement('div'); gate.id='authGate'; gate.className='auth-gate'; document.body.appendChild(gate); }
+  gate.style.display = 'flex';
+  if(kind==='signedOut'){
+    gate.innerHTML = `<div class="auth-gate-card">
+      <div style="font-family:var(--serif);font-size:22px;font-weight:700;margin-bottom:6px;">חתימה+</div>
+      <div class="hint" style="margin-bottom:22px;">יש להתחבר עם חשבון Google כדי להשתמש במערכת.</div>
+      <button class="btn btn-primary" id="btn-google-signin">🔐 התחברות עם Google</button>
+    </div>`;
+    document.getElementById('btn-google-signin').addEventListener('click', signInWithGoogle);
+  } else if(kind==='notRegistered'){
+    gate.innerHTML = `<div class="auth-gate-card">
+      <div style="font-family:var(--serif);font-size:22px;font-weight:700;margin-bottom:6px;">חתימה+</div>
+      <div class="hint" style="margin-bottom:10px;">האימייל <b>${escapeHtml(email||'')}</b> אינו רשום במערכת.</div>
+      <div class="hint" style="margin-bottom:22px;">יש לפנות למנהל/ת המערכת כדי להוסיף אתכם לרשימת המשתמשים, ואז להתחבר שוב.</div>
+      <button class="btn btn-ghost" id="btn-google-signout">התנתקות / החלפת חשבון Google</button>
+    </div>`;
+    document.getElementById('btn-google-signout').addEventListener('click', signOutUser);
+  }
+}
+function hideAuthGate(){
+  const gate = document.getElementById('authGate');
+  if(gate) gate.style.display = 'none';
 }
 function renderBackendBadge(){
   const el = document.getElementById('backendBadge');
@@ -497,6 +583,12 @@ function attachRealtimeListeners(){
     });
     onSnapshot(collection(fbDb,'roster'), async ()=>{
       await refreshRoster();
+      if(state.realPersonId && !state.roster.find(p=>p.id===state.realPersonId)){
+        // המנהל הסיר את המשתמש הזה מהרשימה בזמן שהוא היה מחובר — חוסמים מחדש
+        state.realPersonId = null; state.currentUserId = null;
+        renderAuthGate('notRegistered', state.authUser && state.authUser.email);
+        return;
+      }
       renderIdentitySwitcher();
       if(state.tab==='admin') renderAdminPage();
       if(state.tab==='upload') renderUploadPage();
@@ -542,6 +634,34 @@ function renderNavTabs(){
 function renderIdentitySwitcher(){
   const wrap = document.getElementById('identitySwitcher');
   if(!wrap) return;
+  if(usingCloudBackend){
+    const real = state.roster.find(p=>p.id===state.realPersonId);
+    let html = `<span class="id-label">מחובר/ת: ${real?escapeHtml(real.name)+' ('+ROLE_LABEL[real.role]+')':'—'}</span>`;
+    if(real && real.role==='admin'){
+      const options = [`<option value="">🔓 עצמי (${escapeHtml(real.name)})</option>`]
+        .concat(state.roster.filter(p=>p.id!==real.id).map(p=>`<option value="${p.id}" ${state.currentUserId===p.id?'selected':''}>הצג כ: ${escapeHtml(p.name)} — ${ROLE_LABEL[p.role]}</option>`));
+      html += `<select id="identity-select">${options.join('')}</select>`;
+    }
+    html += `<button class="btn btn-ghost btn-sm" id="btn-signout" style="margin-inline-start:8px;">התנתקות</button>`;
+    wrap.innerHTML = html;
+    const sel = document.getElementById('identity-select');
+    if(sel){
+      sel.value = (state.currentUserId!==state.realPersonId) ? state.currentUserId : '';
+      sel.addEventListener('change', async (e)=>{
+        state.currentUserId = e.target.value || state.realPersonId;
+        const allowed = getAllowedTabs();
+        state.tab = defaultTabForUser(getCurrentUser());
+        if(!allowed.includes(state.tab)) state.tab = allowed[0];
+        state.currentEnvId = null;
+        renderNavTabs();
+        render();
+        toast('מציג כעת כ: ' + escapeHtml(getCurrentUser() ? getCurrentUser().name : real.name));
+      });
+    }
+    document.getElementById('btn-signout').addEventListener('click', signOutUser);
+    return;
+  }
+  // local fallback (no Firebase) — original demo identity-simulation switcher, unchanged
   const options = [`<option value="">🔓 מצב מנהל (לא מזוהה)</option>`]
     .concat(state.roster.map(p=>`<option value="${p.id}" ${state.currentUserId===p.id?'selected':''}>${escapeHtml(p.name)} — ${ROLE_LABEL[p.role]}</option>`));
   wrap.innerHTML = `<span class="id-label">מחובר/ת כ:</span><select id="identity-select">${options.join('')}</select>`;
@@ -569,8 +689,12 @@ function switchTab(tab){
 }
 async function refreshPermissionsUI(){
   if(state.currentUserId && !state.roster.find(p=>p.id===state.currentUserId)){
-    state.currentUserId = null;
-    await StorageAPI.setCurrentUserId(null);
+    if(usingCloudBackend){
+      state.currentUserId = state.roster.find(p=>p.id===state.realPersonId) ? state.realPersonId : null;
+    } else {
+      state.currentUserId = null;
+      await StorageAPI.setCurrentUserId(null);
+    }
   }
   const allowed = getAllowedTabs();
   if(!allowed.includes(state.tab)){
@@ -917,8 +1041,8 @@ function renderAdminPage(){
     <div class="card card-pad">
       <h3 style="font-size:16px;">${state.editingPersonId ? 'עריכת משתמש' : 'הוספת משתמש ידנית'}</h3>
       <div class="field-group"><label class="field-label">שם מלא</label><input type="text" id="p-name" placeholder="ישראל ישראלי"></div>
-      <div class="field-group"><label class="field-label">אימייל</label><input type="email" id="p-email" placeholder="name@example.com"></div>
-      <div class="field-group"><label class="field-label">טלפון (ל-OTP)</label><input type="tel" id="p-phone" placeholder="05X-XXXXXXX"></div>
+      <div class="field-group"><label class="field-label">אימייל (חייב להיות זהה לחשבון ה-Google שאיתו החותם יתחבר)</label><input type="email" id="p-email" placeholder="name@example.com"></div>
+      <div class="field-group"><label class="field-label">טלפון</label><input type="tel" id="p-phone" placeholder="05X-XXXXXXX"></div>
       <div class="field-group"><label class="field-label">רמת הרשאה</label>
         <select id="p-role">
           <option value="admin">מנהל מערכת — ניהול משתמשים ומסמכים</option>
@@ -1283,8 +1407,13 @@ function downloadBase64Pdf(base64, filename){
 }
 
 /* ================= SIGN MODAL (signature only) ================= */
-function openSignModal(envId, signerId){
-  state.signModal = { envId, signerId, step:'otp', otp:String(Math.floor(100000+Math.random()*900000)), sigDataUrl:'' };
+async function openSignModal(envId, signerId){
+  const env = await StorageAPI.getEnvelope(envId);
+  const signer = env.signers.find(s=>s.id===signerId);
+  const myFields = env.fields.filter(f=>f.fieldSignerId===signerId);
+  addAudit(env, signer.name, usingCloudBackend ? 'זהות אומתה באמצעות התחברות עם Google, ומסמך נפתח לצפייה' : 'מסמך נפתח לצפייה (מצב הדגמה מקומי — ללא אימות זהות אמיתי)');
+  await StorageAPI.saveEnvelope(env);
+  state.signModal = { envId, signerId, step: myFields.length>0 ? 'fill' : 'place', placePage: 1, sigDataUrl:'' };
   renderSignModal();
 }
 function closeSignModal(){ state.signModal=null; document.getElementById('signModalOverlay')?.remove(); }
@@ -1298,8 +1427,7 @@ async function renderSignModal(){
   if(!overlay){ overlay = document.createElement('div'); overlay.className='modal-overlay'; overlay.id='signModalOverlay'; document.body.appendChild(overlay); }
 
   let bodyHtml = '';
-  if(sm.step==='otp') bodyHtml = otpStepHtml(signer);
-  else if(sm.step==='place') bodyHtml = placeStepHtml(env, signer);
+  if(sm.step==='place') bodyHtml = placeStepHtml(env, signer);
   else if(sm.step==='fill') bodyHtml = fillStepHtml(env, signer, myFields);
   else if(sm.step==='confirm') bodyHtml = confirmStepHtml(signer);
   else if(sm.step==='done') bodyHtml = doneStepHtml();
@@ -1312,41 +1440,10 @@ async function renderSignModal(){
     ${sm.step!=='done' ? `<div class="modal-foot" id="modalFoot"></div>` : ''}
   </div>`;
   document.getElementById('btn-close-modal')?.addEventListener('click', closeSignModal);
-  if(sm.step==='otp') bindOtpStep(env, signer);
   if(sm.step==='place') bindPlaceStep(env, signer);
   if(sm.step==='fill') bindFillStep(env, signer, myFields);
   if(sm.step==='confirm') bindConfirmStep(env, signer, myFields);
   if(sm.step==='done') bindDoneStep();
-}
-
-function otpStepHtml(signer){
-  const sm = state.signModal;
-  return `<div class="otp-demo-note">🔐 קוד אימות (OTP) הודגם כאן לצורך הדגמה — בסביבת ייצור הוא היה נשלח ל-${escapeHtml(signer.email)} באמצעות SMS/WhatsApp/Email.
-  <div style="margin-top:6px;font-weight:700;letter-spacing:3px;font-size:16px;">${sm.otp}</div></div>
-  <div class="field-group"><label class="field-label">הזינו את הקוד בן 6 הספרות</label>
-  <div class="otp-boxes">${[0,1,2,3,4,5].map(i=>`<input maxlength="1" inputmode="numeric" class="otp-digit" data-i="${i}">`).join('')}</div>
-  <div class="hint" id="otp-error" style="color:var(--seal);text-align:center;"></div></div>`;
-}
-function bindOtpStep(env, signer){
-  const sm = state.signModal;
-  const digits = document.querySelectorAll('.otp-digit');
-  digits.forEach((el,i)=>{
-    el.addEventListener('input', ()=>{ el.value=el.value.replace(/\D/g,'').slice(0,1); if(el.value && digits[i+1]) digits[i+1].focus(); });
-    el.addEventListener('keydown', (e)=>{ if(e.key==='Backspace' && !el.value && digits[i-1]) digits[i-1].focus(); });
-  });
-  const foot = document.getElementById('modalFoot');
-  foot.innerHTML = `<button class="btn btn-ghost" id="btn-otp-autofill">מילוי אוטומטי (הדגמה)</button><button class="btn btn-primary" id="btn-otp-verify">אמת והמשך →</button>`;
-  document.getElementById('btn-otp-autofill').addEventListener('click', ()=>{ sm.otp.split('').forEach((ch,i)=>digits[i].value=ch); });
-  document.getElementById('btn-otp-verify').addEventListener('click', async ()=>{
-    const entered = Array.from(digits).map(d=>d.value).join('');
-    if(entered !== sm.otp){ document.getElementById('otp-error').textContent='קוד שגוי, נסו שוב.'; return; }
-    addAudit(env, signer.name, 'זהות אומתה באמצעות OTP ומסמך נפתח לצפייה');
-    await StorageAPI.saveEnvelope(env);
-    const myFields = env.fields.filter(f=>f.fieldSignerId===signer.id);
-    if(myFields.length>0){ sm.step='fill'; }
-    else { sm.step='place'; sm.placePage = 1; }
-    renderSignModal();
-  });
 }
 
 function placeStepHtml(env, signer){
