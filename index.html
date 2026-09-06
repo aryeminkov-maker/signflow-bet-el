@@ -1497,7 +1497,6 @@ async function renderSignModal(){
   let bodyHtml = '';
   if(sm.step==='place') bodyHtml = placeStepHtml(env, signer);
   else if(sm.step==='fill') bodyHtml = fillStepHtml(env, signer, myFields);
-  else if(sm.step==='confirm') bodyHtml = confirmStepHtml(signer);
   else if(sm.step==='done') bodyHtml = doneStepHtml();
 
   overlay.innerHTML = `<div class="modal">
@@ -1510,7 +1509,6 @@ async function renderSignModal(){
   document.getElementById('btn-close-modal')?.addEventListener('click', closeSignModal);
   if(sm.step==='place') bindPlaceStep(env, signer);
   if(sm.step==='fill') bindFillStep(env, signer, myFields);
-  if(sm.step==='confirm') bindConfirmStep(env, signer, myFields);
   if(sm.step==='done') bindDoneStep();
 }
 
@@ -1671,7 +1669,7 @@ function bindFillStep(env, signer, myFields){
     });
   });
   const foot = document.getElementById('modalFoot');
-  foot.innerHTML = `<button class="btn btn-ghost" id="btn-decline">סרב לחתום</button><button class="btn btn-primary" id="btn-fill-continue">המשך לאישור →</button>`;
+  foot.innerHTML = `<button class="btn btn-ghost" id="btn-decline">סרב לחתום</button><button class="btn btn-seal" id="btn-fill-continue">אשר וחתום ✒</button>`;
   document.getElementById('btn-decline').addEventListener('click', async ()=>{
     const reason = prompt('נא לציין סיבת דחייה:');
     if(reason===null) return;
@@ -1680,9 +1678,11 @@ function bindFillStep(env, signer, myFields){
     addAudit(env, signer.name, 'החותם דחה את בקשת החתימה: '+(reason||'—'));
     await StorageAPI.saveEnvelope(env); closeSignModal(); await refreshEnvelopes(); render();
   });
-  document.getElementById('btn-fill-continue').addEventListener('click', ()=>{
+  document.getElementById('btn-fill-continue').addEventListener('click', async (e)=>{
     for(const f of myFields){ const gi=env.fields.indexOf(f); if(!values[gi]){ toast('נא לצייר חתימה בכל שדה'); return; } }
-    sm.fieldValues = values; sm.step='confirm'; renderSignModal();
+    sm.fieldValues = values;
+    e.target.disabled = true; e.target.innerHTML = '<span class="spinner"></span> מטמיע חתימה...';
+    await finalizeSignature(env, signer, myFields);
   });
 }
 function setupSignaturePad(canvas, onChange){
@@ -1696,22 +1696,6 @@ function setupSignaturePad(canvas, onChange){
   canvas.addEventListener('touchstart', start, {passive:false}); canvas.addEventListener('touchmove', move, {passive:false}); canvas.addEventListener('touchend', end);
 }
 
-function confirmStepHtml(signer){
-  return `<p style="font-size:14px;line-height:1.7;">בלחיצה על "אשר וחתום" אני, <b>${escapeHtml(signer.name)}</b>, מאשר/ת כי קראתי את המסמך, וכי החתימה שסופקה על ידי מהווה הסכמה מחייבת לתוכנו, בהתאם לחוק חתימה אלקטרונית. פעולה זו תתועד עם חותמת זמן, וכל שינוי עתידי במסמך יזוהה אוטומטית.</p>
-  <div class="checklist-item"><input type="checkbox" id="chk-confirm-legal"><label for="chk-confirm-legal">קראתי ואני מסכים/ה לתנאים לעיל</label></div>`;
-}
-function bindConfirmStep(env, signer, myFields){
-  const sm = state.signModal;
-  const foot = document.getElementById('modalFoot');
-  foot.innerHTML = `<button class="btn btn-ghost" id="btn-back-fill">→ חזרה למילוי</button><button class="btn btn-seal" id="btn-final-sign" disabled>אשר וחתום ✒</button>`;
-  const chk = document.getElementById('chk-confirm-legal'); const btn = document.getElementById('btn-final-sign');
-  chk.addEventListener('change', ()=>{ btn.disabled=!chk.checked; });
-  document.getElementById('btn-back-fill').addEventListener('click', ()=>{ sm.step='fill'; renderSignModal(); });
-  btn.addEventListener('click', async ()=>{
-    btn.disabled=true; btn.innerHTML='<span class="spinner"></span> מטמיע חתימה...';
-    await finalizeSignature(env, signer, myFields);
-  });
-}
 async function findPendingEnvelopesForSigner(signerId, excludeEnvId){
   const ids = await StorageAPI.listEnvelopeIds();
   const pending = [];
@@ -1797,43 +1781,6 @@ function goToEnvelopeAndSign(envId, signerId){
   openSignModal(envId, signerId);
 }
 
-/* ================= HEBREW-SAFE TEXT RENDERING FOR CERTIFICATE PAGE ================= */
-async function renderCertificatePageImages(env){
-  await (document.fonts && document.fonts.ready);
-  const W=1240, H=1754;
-  const pageImgs = [];
-  let lines = [];
-  lines.push({t:'תעודת השלמת חתימה  |  Certificate of Completion', size:30, weight:800, gap:46});
-  lines.push({t:'כותרת: '+env.title, size:18, weight:600, gap:30});
-  lines.push({t:'מסמך: '+env.documentName, size:15, weight:400, gap:26});
-  lines.push({t:'נוצר: '+fmtDT(env.createdAt)+'   |   הושלם: '+fmtDT(env.completedAt||nowISO()), size:14, weight:400, gap:24});
-  lines.push({t:'סוג זרימה: '+(env.flowType==='sequential'?'טורית':'מקבילה'), size:14, weight:400, gap:34});
-  lines.push({t:'חותמים:', size:17, weight:700, gap:30});
-  env.signers.forEach(s=>{ lines.push({t:'• '+s.name+'   <'+s.email+'>   נחתם: '+fmtDT(s.signedAt), size:13, weight:400, gap:22}); });
-  lines.push({t:' ', size:10, weight:400, gap:14});
-  lines.push({t:'Audit Trail:', size:17, weight:700, gap:30});
-  env.auditLog.forEach(a=>{ lines.push({t:fmtDT(a.ts)+'  —  '+a.actor+'  —  '+a.action, size:11.5, weight:400, gap:20, muted:true}); });
-  lines.push({t:' ', size:10, weight:400, gap:10});
-  lines.push({t:'Hash מסמך מקורי (SHA-256): '+(env.originalHash||''), size:9.5, weight:400, gap:18, muted:true, mono:true});
-
-  const margin=70; let idx=0;
-  while(idx<lines.length){
-    const canvas=document.createElement('canvas'); canvas.width=W; canvas.height=H;
-    const ctx=canvas.getContext('2d'); ctx.fillStyle='#FFFFFF'; ctx.fillRect(0,0,W,H);
-    ctx.direction='rtl'; ctx.textAlign='right'; ctx.textBaseline='top';
-    let y=margin;
-    while(idx<lines.length && y<H-margin){
-      const ln=lines[idx];
-      ctx.font=`${ln.weight} ${ln.size*2}px ${ln.mono?'monospace':'Heebo, Arial'}`;
-      ctx.fillStyle = ln.muted ? '#5C6B72' : '#16232B';
-      ctx.fillText(ln.t, W-margin, y);
-      y += ln.gap*2; idx++;
-    }
-    pageImgs.push(canvas.toDataURL('image/png'));
-  }
-  return pageImgs;
-}
-
 /* ================= FINAL PDF GENERATION (signature-only fields) ================= */
 async function generateFinalPdf(env){
   try{
@@ -1851,13 +1798,6 @@ async function generateFinalPdf(env){
         const pngImage = await pdfDoc.embedPng(pngBytes);
         page.drawImage(pngImage, { x:boxX, y:boxYBottom, width:boxW, height:boxH });
       }catch(e){ console.error('sig embed error', e); }
-    }
-    const certImgs = await renderCertificatePageImages(env);
-    for(const dataUrl of certImgs){
-      const pngBytes = base64ToBuf(dataUrl.split(',')[1]);
-      const pngImage = await pdfDoc.embedPng(pngBytes);
-      const p = pdfDoc.addPage([595.28, 841.89]);
-      p.drawImage(pngImage, {x:0,y:0,width:595.28,height:841.89});
     }
     const outBytes = await pdfDoc.save();
     env.finalPdfBase64 = bufToBase64(outBytes);
