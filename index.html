@@ -36,7 +36,9 @@ nav.tabs button.active{background:var(--ink);color:#fff;}
 .identity-switcher{display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:100%;}
 .identity-switcher select{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12.5px;font-family:inherit;max-width:min(230px,60vw);color:var(--ink);}
 .identity-switcher .id-label{font-size:11px;color:var(--gray);white-space:nowrap;}
-.demo-banner{background:var(--amber-soft);color:#5C4318;border-bottom:1px solid #E4CE9C;font-size:13px;text-align:center;padding:8px 16px;}
+.status-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;}
+.status-pill.status-ok{background:#DCE9E3;color:#265144;border:1px solid #BFDBCF;}
+.status-pill.status-bad{background:#F6DCD8;color:#7E2E21;border:1px solid #ECB7AE;}
 h1,h2,h3{font-family:var(--serif);font-weight:700;margin:0 0 8px;}
 .page-title{font-size:30px;margin:32px 0 6px;}
 .page-sub{color:var(--ink-soft);font-size:15px;margin-bottom:28px;}
@@ -155,7 +157,6 @@ table.audit tr:last-child td{border-bottom:none;}
 </style>
 </head>
 <body>
-<div class="demo-banner" id="backendBadge" style="background:#F1EFE8;border-bottom:1px solid var(--line);"></div>
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand">
@@ -165,6 +166,7 @@ table.audit tr:last-child td{border-bottom:none;}
         <path d="M11 27h18" stroke="#A8402F" stroke-width="1.6" stroke-linecap="round"/>
       </svg>
       <div><div class="brand-text">חתימה<span style="color:#A8402F">+</span></div><div class="brand-sub">מערכת חתימה דיגיטלית ארגונית</div></div>
+      <span id="backendBadge" class="status-pill"></span>
     </div>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
       <nav class="tabs" id="navTabs"></nav>
@@ -222,6 +224,7 @@ const fmtD = (iso) => { if(!iso) return '—'; return new Date(iso).toLocaleDate
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function toast(msg){ const wrap=document.getElementById('toastWrap'); const el=document.createElement('div'); el.className='toast'; el.textContent=msg; wrap.appendChild(el); setTimeout(()=>el.remove(),3200); }
 function toastError(msg){ const wrap=document.getElementById('toastWrap'); const el=document.createElement('div'); el.className='toast toast-error'; el.textContent='⚠ '+msg; wrap.appendChild(el); setTimeout(()=>el.remove(),5000); }
+function showAppMalfunction(){ toastError('יש תקלה באפליקציה — לא ניתן להעלות מסמכים כרגע. נסו לרענן את העמוד, ואם התקלה נמשכת פנו למנהל המערכת.'); }
 
 async function sha256(bytesOrString){
   let buf = typeof bytesOrString === 'string' ? new TextEncoder().encode(bytesOrString) : bytesOrString;
@@ -488,8 +491,9 @@ async function init(){
     listenForAuthChanges(); // the rest of the app boots inside this callback, once we know who's signed in
     return;
   }
-  // local fallback (no Firebase configured / connection failed) — unchanged demo behavior
+  // local fallback (Firebase not configured / connection failed) — app is now considered "down"
   renderBackendBadge();
+  showAppMalfunction();
   await refreshEnvelopes();
   await refreshRoster();
   state.currentUserId = await StorageAPI.getCurrentUserId();
@@ -570,11 +574,13 @@ function renderBackendBadge(){
   const el = document.getElementById('backendBadge');
   if(!el) return;
   if(usingCloudBackend){
-    el.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#3B6E5E;display:inline-block;"></span>מחובר ל-Firebase (Firestore, תוכנית חינמית) — נתונים משותפים בזמן אמת</span>`;
-    el.style.color = '#265144';
+    el.className = 'status-pill status-ok';
+    el.textContent = '🟢 פעיל';
+    el.title = 'מחובר למערכת — נתונים משותפים בזמן אמת';
   } else {
-    el.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#B4802E;display:inline-block;"></span>מצב מקומי בלבד — הנתונים נשמרים רק בדפדפן הזה. כדי לסנכרן בין מחשבים, מלאו את firebaseConfig בקוד.</span>`;
-    el.style.color = '#7A5A1E';
+    el.className = 'status-pill status-bad';
+    el.textContent = '🔴 לא פעיל';
+    el.title = 'יש תקלה בחיבור למערכת — לא ניתן להעלות מסמכים כרגע';
   }
 }
 function attachRealtimeListeners(){
@@ -732,9 +738,9 @@ function renderUploadPage(){
         <div>📄 <b>${escapeHtml(d.documentName)}</b> — ${d.pageCount} עמודים</div>
         <button class="btn btn-ghost btn-sm" id="btn-replace-doc">החלף קובץ</button>
       </div>` : `
-      <div class="dropzone" id="dropzone">
+      <div class="dropzone" id="dropzone" style="${!usingCloudBackend?'opacity:.5;cursor:not-allowed;':''}">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0-11 4 4m-4-4-4 4M5 17v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="#16232B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div style="font-weight:600;">גררו קובץ PDF לכאן או לחצו לבחירה</div>
+        <div style="font-weight:600;">${usingCloudBackend?'גררו קובץ PDF לכאן או לחצו לבחירה':'לא ניתן להעלות מסמכים כרגע — יש תקלה באפליקציה'}</div>
         <div class="hint">קובץ PDF בלבד, עד 20MB</div>
       </div>`}
     <input type="file" id="f-file" accept="application/pdf" style="display:none">
@@ -838,11 +844,11 @@ function bindUploadEvents(){
   const d = state.draft;
   const dz = document.getElementById('dropzone');
   const fileInput = document.getElementById('f-file');
-  dz?.addEventListener('click', ()=>fileInput.click());
-  dz?.addEventListener('dragover', e=>{e.preventDefault(); dz.classList.add('drag');});
+  dz?.addEventListener('click', ()=>{ if(!usingCloudBackend){ showAppMalfunction(); return; } fileInput.click(); });
+  dz?.addEventListener('dragover', e=>{e.preventDefault(); if(usingCloudBackend) dz.classList.add('drag');});
   dz?.addEventListener('dragleave', ()=>dz.classList.remove('drag'));
-  dz?.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
-  document.getElementById('btn-replace-doc')?.addEventListener('click', ()=>fileInput.click());
+  dz?.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(!usingCloudBackend){ showAppMalfunction(); return; } if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+  document.getElementById('btn-replace-doc')?.addEventListener('click', ()=>{ if(!usingCloudBackend){ showAppMalfunction(); return; } fileInput.click(); });
   fileInput?.addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
   document.getElementById('f-title')?.addEventListener('input', e=>{ d.title=e.target.value; syncSendBtn(); });
   document.getElementById('btn-goto-admin')?.addEventListener('click', ()=>switchTab('admin'));
@@ -945,6 +951,7 @@ function syncSendBtn(){
 }
 
 async function handleFile(file){
+  if(!usingCloudBackend){ showAppMalfunction(); const fi=document.getElementById('f-file'); if(fi) fi.value=''; return; }
   const nameLower = (file.name||'').toLowerCase();
   const looksLikePdfExt = nameLower.endsWith('.pdf');
   const looksLikePdfType = file.type === 'application/pdf';
@@ -1002,6 +1009,7 @@ async function renderPdfIntoEditor(){
 
 /* ================= SEND ================= */
 async function sendEnvelope(){
+  if(!usingCloudBackend){ showAppMalfunction(); return; }
   const d = state.draft;
   const signers = d.signerIds.map(id=>{
     const p = state.roster.find(r=>r.id===id);
