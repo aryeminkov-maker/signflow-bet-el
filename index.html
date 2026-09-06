@@ -352,9 +352,9 @@ let usingCloudBackend = false;
    Until both are filled in, notification permission/token requests are skipped
    (or clearly reported to the user) and the rest of the app keeps working
    exactly as before — this is purely additive. */
-const FCM_VAPID_KEY = ''; // TODO: להדביק כאן את מפתח ה-VAPID
-const PUSH_WORKER_URL = ''; // TODO: להדביק כאן את כתובת ה-Cloudflare Worker
-const PUSH_WORKER_SECRET = ''; // TODO: להדביק כאן את אותו SEND_SECRET שהוגדר ב-Worker (מונע שליחת פוש על ידי גורם חיצוני שמצא את הכתובת)
+const FCM_VAPID_KEY = 'BHs2ozCLJr3hGVRdeqGP08FspcDqGYbRMmd-2FUWwSitH2koxXBm-Bycp_qssKURdiDUye_YgDuQQXAK6QBtpS8';
+const PUSH_WORKER_URL = 'https://signflow-push.arye-minkov.workers.dev';
+const PUSH_WORKER_SECRET = 'esFgLcyAWSl-cW4PubBrGG1m4G2U3y5k';
 
 let fbMessaging = null; // cached { mod, instance } once initialized
 async function tryGetMessaging(){
