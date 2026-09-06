@@ -154,7 +154,10 @@ table.audit tr:last-child td{border-bottom:none;}
 .import-dropzone{border:2px dashed var(--line);border-radius:var(--radius);padding:26px 20px;text-align:center;background:#FBFAF6;cursor:pointer;transition:.15s;}
 @media (max-width:480px){
   .topbar-inner{padding:12px 14px;}
-  nav.tabs button{padding:8px 10px;font-size:12.5px;}
+  .topbar-controls{width:100%;}
+  nav.tabs{width:100%;}
+  nav.tabs button{flex:1 1 0;text-align:center;padding:8px 6px;font-size:12.5px;}
+  .identity-switcher{width:100%;justify-content:center;}
   .identity-switcher select{max-width:45vw;}
 }
 .import-dropzone.drag{border-color:var(--seal);background:#FBEEEC;}
