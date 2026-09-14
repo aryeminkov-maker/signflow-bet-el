@@ -1007,6 +1007,19 @@ async function handleFile(file){
 }
 
 let editorRenderToken = 0;
+/* מטמון PDF משותף — טעינה ופרסור של PDF (pdf.js) איטיים יחסית; בלי מטמון, כל רינדור מחדש
+   (שקורה כמעט בכל לחיצה) היה טוען ומפענח את כל הקובץ מחדש מאפס, כולל כשכמה תצוגות מקדימות
+   (למשל כמה שדות חתימה) נטענות באותו מסך — כל אחת בנפרד. שמירה לפי הפניה למחרוזת ה-base64
+   (לא ערכה) מספיקה, כי אותו אובייקט מחרוזת נשאר בזיכרון כל עוד לא הוחלף קובץ. */
+let sharedPdfCache = { base64: null, promise: null };
+function getSharedPdf(base64){
+  if(sharedPdfCache.base64 === base64 && sharedPdfCache.promise) return sharedPdfCache.promise;
+  const buf = base64ToBuf(base64);
+  const p = pdfjsLib.getDocument({data: buf}).promise;
+  sharedPdfCache = { base64, promise: p };
+  return p;
+}
+
 let editorRenderTask = null;
 async function renderPdfIntoEditor(){
   const d = state.draft;
@@ -1016,8 +1029,7 @@ async function renderPdfIntoEditor(){
   const myToken = ++editorRenderToken; // invalidates any still-pending older render below
   if(editorRenderTask){ try{ editorRenderTask.cancel(); }catch(e){} }
   try{
-    const buf = base64ToBuf(d.documentBase64);
-    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    const pdf = await getSharedPdf(d.documentBase64);
     const page = await pdf.getPage(state.currentPage);
     if(myToken !== editorRenderToken) return; // a newer render started while we were loading — bail out
     const viewport = page.getViewport({scale:1});
@@ -1566,6 +1578,7 @@ async function renderEnvelopeDetail(){
   const auditRows = env.auditLog.slice().reverse().map(a=>`<tr><td>${fmtDT(a.ts)}</td><td>${escapeHtml(a.actor)}</td><td>${escapeHtml(a.action)}</td></tr>`).join('');
   let downloadBtn = env.status==='Completed' && env.finalPdfBase64 ? `<button class="btn btn-seal" id="btn-download-final" style="width:100%;justify-content:center;margin-bottom:10px;">⬇ הורדת המסמך החתום</button>` : '';
   let auditDownloadBtn = `<button class="btn btn-ghost" id="btn-download-audit" style="width:100%;justify-content:center;margin-bottom:10px;">📋 הורדת קובץ תיעוד (Audit Trail)</button>`;
+  let readDocBtn = `<button class="btn btn-ghost" id="btn-read-doc-detail" style="width:100%;justify-content:center;margin-bottom:10px;">📄 צפייה במסמך${env.documentBase64 ? ' המקורי' : ' החתום'}</button>`;
   const canVoid = cu && (cu.role==='admin' || cu.id===env.createdById);
   let voidBtn = canVoid && !['Completed','Voided','Declined'].includes(env.status) ? `<button class="btn btn-danger btn-sm" id="btn-void-env" style="width:100%;justify-content:center;margin-top:10px;">בטל מסמך</button>` : '';
 
@@ -1582,6 +1595,7 @@ async function renderEnvelopeDetail(){
       <div style="max-height:280px;overflow:auto;"><table class="audit"><thead><tr><th>זמן</th><th>גורם</th><th>פעולה</th></tr></thead><tbody>${auditRows}</tbody></table></div>
     </div>
     <div><div class="card card-pad" style="margin-bottom:16px;">
+      ${readDocBtn}
       ${downloadBtn}
       ${auditDownloadBtn}
       <div class="stat-line"><span>סוג זרימה</span><b>${env.flowType==='sequential'?'טורית':'מקבילה'}</b></div>
@@ -1601,12 +1615,23 @@ async function renderEnvelopeDetail(){
   });
   document.getElementById('btn-download-final')?.addEventListener('click', ()=>{ downloadBase64Pdf(env.finalPdfBase64, env.documentName.replace(/\.pdf$/i,'')+'-חתום.pdf'); });
   document.getElementById('btn-download-audit')?.addEventListener('click', ()=>downloadAuditTrail(env));
+  document.getElementById('btn-read-doc-detail')?.addEventListener('click', ()=>openDocumentInNewTab(env.documentBase64 || env.finalPdfBase64));
   document.querySelectorAll('[data-simulate-sign]').forEach(b=>b.addEventListener('click', ()=>openSignModal(env.id, b.dataset.simulateSign)));
 }
 function downloadBase64Pdf(base64, filename){
   const buf = base64ToBuf(base64); const blob = new Blob([buf], {type:'application/pdf'});
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download=filename; a.click();
   setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+function openDocumentInNewTab(base64){
+  try{
+    const buf = base64ToBuf(base64);
+    const blob = new Blob([buf], {type:'application/pdf'});
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if(!win){ toastError('הדפדפן חסם את פתיחת החלון — יש לאשר חלונות קופצים לאתר הזה ולנסות שוב.'); }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }catch(err){ console.error('[signflow] open document failed', err); toastError('שגיאה בפתיחת המסמך לקריאה.'); }
 }
 function downloadAuditTrail(env){
   const lines = [];
@@ -1679,6 +1704,7 @@ async function renderSignModal(){
 function placeStepHtml(env, signer){
   const sm = state.signModal;
   return `
+  <button class="btn btn-ghost btn-sm" id="btn-read-full-doc" style="margin-bottom:10px;">📄 קרא את המסמך המלא (בכרטיסייה חדשה)</button>
   <div class="otp-demo-note" style="background:var(--moss-soft);border-color:#BFDBCF;color:#1f4438;">✍️ לחצו על המסמך במקום המדויק שבו תרצו לחתום. ניתן לדפדף בין העמודים אם המסמך כולל יותר מעמוד אחד.</div>
   <div class="pdf-toolbar">
     <div class="page-nav">
@@ -1701,8 +1727,7 @@ async function renderModalPdfPage(env, pageNum){
   const myToken = ++modalRenderToken;
   if(modalRenderTask){ try{ modalRenderTask.cancel(); }catch(e){} }
   try{
-    const buf = base64ToBuf(env.documentBase64);
-    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    const pdf = await getSharedPdf(env.documentBase64);
     const page = await pdf.getPage(pageNum);
     if(myToken !== modalRenderToken) return;
     const viewport = page.getViewport({scale:1});
@@ -1722,6 +1747,7 @@ async function renderModalPdfPage(env, pageNum){
 function bindPlaceStep(env, signer){
   const sm = state.signModal;
   renderModalPdfPage(env, sm.placePage);
+  document.getElementById('btn-read-full-doc')?.addEventListener('click', ()=>openDocumentInNewTab(env.documentBase64));
   document.getElementById('btn-modal-prev-page')?.addEventListener('click', ()=>{ if(sm.placePage>1){ sm.placePage--; renderSignModal(); } });
   document.getElementById('btn-modal-next-page')?.addEventListener('click', ()=>{ if(sm.placePage<env.pageCount){ sm.placePage++; renderSignModal(); } });
   const wrap = document.getElementById('modalPdfPageWrap');
@@ -1754,6 +1780,7 @@ function fillStepHtml(env, signer, myFields){
   const person = state.roster.find(r=>r.id===signer.id);
   const hasSaved = !!(person && person.signatureImage);
   return `<div style="max-height:60vh;overflow:auto;">
+  <button class="btn btn-ghost btn-sm" id="btn-read-full-doc" style="margin-bottom:12px;">📄 קרא את המסמך המלא (בכרטיסייה חדשה)</button>
   ${myFields.length>1 ? `<div class="hint" style="margin-bottom:10px;">נדרשות ${myFields.length} חתימות במסמך זה, לפי הסדר הבא:</div>` : ''}
   ${hasSaved ? `<div class="otp-demo-note" style="background:var(--moss-soft);border-color:#BFDBCF;color:#1f4438;">נמצאה חתימה שמורה עבורך במערכת — ניתן להדביק אותה אוטומטית בכל שדה, או לצייר חתימה חדשה.</div>` : ''}
   ${myFields.map((f,idx)=>{
@@ -1781,8 +1808,7 @@ async function renderFieldPreviewThumbnail(env, field, canvasId){
   const canvas = document.getElementById(canvasId);
   if(!canvas) return;
   try{
-    const buf = base64ToBuf(env.documentBase64);
-    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    const pdf = await getSharedPdf(env.documentBase64);
     const page = await pdf.getPage(field.page);
     const viewport = page.getViewport({scale:1});
     const targetW = 300;
@@ -1817,6 +1843,7 @@ function drawSavedSignatureIntoCanvas(canvas, dataUrl, onChange){
 function bindFillStep(env, signer, myFields){
   const sm = state.signModal;
   const person = state.roster.find(r=>r.id===signer.id);
+  document.getElementById('btn-read-full-doc')?.addEventListener('click', ()=>openDocumentInNewTab(env.documentBase64));
   const values = {};
   myFields.forEach(f=>{
     const gi = env.fields.indexOf(f);
@@ -1967,6 +1994,9 @@ async function generateFinalPdf(env){
     const outBytes = await pdfDoc.save();
     env.finalPdfBase64 = bufToBase64(outBytes);
     env.finalHash = await sha256(outBytes);
+    // המסמך המקורי כבר לא נחוץ (הסופי מכיל את כל תוכנו + החתימות) — מוחקים אותו כדי לא
+    // להכפיל את התפוסה באותו מסמך Firestore (מגבלת 1MB לכל מסמך, כולל שני קידודי base64)
+    env.documentBase64 = '';
     if(usingCloudBackend && outBytes.byteLength > FIRESTORE_SAFE_PDF_BYTES){
       toastError('המסמך החתום הסופי גדול מדי לשמירה ב-Firestore — הוא זמין להורדה בסשן הנוכחי, אך לא יסתנכרן לענן. שקלו לעבור ל-Firebase Storage למסמכים גדולים.');
     }
