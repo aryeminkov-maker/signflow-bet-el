@@ -397,6 +397,21 @@ async function tryGetMessaging(){
   }
 }
 
+let foregroundListenerAttached = false;
+async function attachForegroundPushListener(){
+  if(foregroundListenerAttached) return;
+  const fbm = await tryGetMessaging();
+  if(!fbm) return;
+  fbm.mod.onMessage(fbm.instance, (payload)=>{
+    // כשהאתר פתוח ובפוקוס, Firebase לא מציג התראת מערכת אוטומטית (זה קורה רק ברקע דרך ה-Service Worker) —
+    // אז כאן מציגים הודעה בתוך האפליקציה עצמה כדי שהחותם/בעל המסמך יראה שקרה משהו.
+    const title = (payload.notification && payload.notification.title) || 'התראה';
+    const body = (payload.notification && payload.notification.body) || '';
+    toast('🔔 ' + title + (body ? ': ' + body : ''));
+  });
+  foregroundListenerAttached = true;
+}
+
 async function enablePushNotifications(){
   const cu = getCurrentUser();
   if(!cu){ toast('יש לבחור זהות דרך "מחובר/ת כ:" לפני הפעלת התראות'); return; }
@@ -412,6 +427,7 @@ async function enablePushNotifications(){
     cu.fcmToken = token; cu.notificationsEnabledAt = nowISO();
     await StorageAPI.upsertPerson(cu);
     await refreshRoster();
+    await attachForegroundPushListener();
     toast('התראות הופעלו בהצלחה 🔔');
     render();
   }catch(err){
@@ -541,6 +557,7 @@ function listenForAuthChanges(){
     }
     state.realPersonId = match.id;
     state.currentUserId = match.id;
+    if(match.fcmToken) attachForegroundPushListener(); // אושר בעבר — מפעילים גם ללא לחיצה חדשה על הכפתור
     await refreshEnvelopes();
     resetDraft();
     const allowed = getAllowedTabs();
@@ -738,7 +755,7 @@ async function refreshPermissionsUI(){
 }
 
 function resetDraft(){
-  state.draft = { id: uid(), title:'', flowType:'parallel', documentName:'', documentBase64:'', documentSizeBytes:0, pageCount:0, signerIds:[], fields:[] };
+  state.draft = { id: uid(), title:'', flowType:'parallel', documentName:'', documentBase64:'', documentSizeBytes:0, pageCount:0, signerIds:[], fields:[], titleManuallyEdited:false };
   state.currentPage = 1; state.fieldsEnabled = false; state.placingSignerId = null;
 }
 
@@ -877,7 +894,7 @@ function bindUploadEvents(){
   dz?.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(!usingCloudBackend){ showAppMalfunction(); return; } if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
   document.getElementById('btn-replace-doc')?.addEventListener('click', ()=>{ if(!usingCloudBackend){ showAppMalfunction(); return; } fileInput.click(); });
   fileInput?.addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
-  document.getElementById('f-title')?.addEventListener('input', e=>{ d.title=e.target.value; syncSendBtn(); });
+  document.getElementById('f-title')?.addEventListener('input', e=>{ d.title=e.target.value; d.titleManuallyEdited=true; syncSendBtn(); });
   document.getElementById('btn-goto-admin')?.addEventListener('click', ()=>switchTab('admin'));
 
   document.getElementById('f-flow')?.addEventListener('change', e=>{ d.flowType=e.target.value; renderUploadPage(); });
@@ -1000,7 +1017,7 @@ async function handleFile(file){
     state.draft.documentBase64 = base64;
     state.draft.documentSizeBytes = file.size;
     state.draft.pageCount = pdf.numPages;
-    if(!state.draft.title) state.draft.title = file.name.replace(/\.pdf$/i,'');
+    if(!state.draft.titleManuallyEdited) state.draft.title = file.name.replace(/\.pdf$/i,'');
     toast('המסמך נטען בהצלחה — ' + pdf.numPages + ' עמודים');
     renderUploadPage();
   }catch(err){ console.error(err); toastError('שגיאה בקריאת קובץ ה-PDF — ייתכן שהקובץ פגום או אינו PDF תקין.'); }
@@ -1782,7 +1799,10 @@ function fillStepHtml(env, signer, myFields){
   return `<div style="max-height:60vh;overflow:auto;">
   <button class="btn btn-ghost btn-sm" id="btn-read-full-doc" style="margin-bottom:12px;">📄 קרא את המסמך המלא (בכרטיסייה חדשה)</button>
   ${myFields.length>1 ? `<div class="hint" style="margin-bottom:10px;">נדרשות ${myFields.length} חתימות במסמך זה, לפי הסדר הבא:</div>` : ''}
-  ${hasSaved ? `<div class="otp-demo-note" style="background:var(--moss-soft);border-color:#BFDBCF;color:#1f4438;">נמצאה חתימה שמורה עבורך במערכת — ניתן להדביק אותה אוטומטית בכל שדה, או לצייר חתימה חדשה.</div>` : ''}
+  ${hasSaved ? `<div class="otp-demo-note" style="background:var(--moss-soft);border-color:#BFDBCF;color:#1f4438;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <span>נמצאה חתימה שמורה עבורך במערכת — ניתן להדביק אותה אוטומטית בכל שדה, או לצייר חתימה חדשה.</span>
+    ${myFields.length>1 ? `<button class="btn btn-seal btn-sm" id="btn-insert-saved-all" style="white-space:nowrap;">🖋 הדבק בכל השדות (${myFields.length})</button>` : ''}
+  </div>` : ''}
   ${myFields.map((f,idx)=>{
     const gi = env.fields.indexOf(f);
     return `<div class="field-group" style="border:1px solid var(--line);border-radius:10px;padding:14px;background:#FBFAF6;">
@@ -1845,10 +1865,12 @@ function bindFillStep(env, signer, myFields){
   const person = state.roster.find(r=>r.id===signer.id);
   document.getElementById('btn-read-full-doc')?.addEventListener('click', ()=>openDocumentInNewTab(env.documentBase64));
   const values = {};
+  const fieldCanvases = []; // {gi, canvas} — נשמר כדי לתמוך בהדבקה לכולם ובגלילה לשדה חסר
   myFields.forEach(f=>{
     const gi = env.fields.indexOf(f);
     const canvas = document.getElementById('sigCanvas-'+gi);
     if(!canvas) return;
+    fieldCanvases.push({ gi, canvas });
     renderFieldPreviewThumbnail(env, f, 'fieldPreview-'+gi);
     setupSignaturePad(canvas, dataUrl => { values[gi]=dataUrl; });
     document.querySelector(`[data-clear-sig="${gi}"]`)?.addEventListener('click', ()=>{
@@ -1858,6 +1880,13 @@ function bindFillStep(env, signer, myFields){
       if(!person || !person.signatureImage) return;
       drawSavedSignatureIntoCanvas(canvas, person.signatureImage, dataUrl => { values[gi]=dataUrl; });
     });
+  });
+  document.getElementById('btn-insert-saved-all')?.addEventListener('click', ()=>{
+    if(!person || !person.signatureImage) return;
+    fieldCanvases.forEach(({gi, canvas})=>{
+      drawSavedSignatureIntoCanvas(canvas, person.signatureImage, dataUrl => { values[gi]=dataUrl; });
+    });
+    toast('החתימה הודבקה בכל השדות');
   });
   const foot = document.getElementById('modalFoot');
   foot.innerHTML = `<button class="btn btn-ghost" id="btn-decline">סרב לחתום</button><button class="btn btn-seal" id="btn-fill-continue">אשר וחתום ✒</button>`;
@@ -1870,7 +1899,15 @@ function bindFillStep(env, signer, myFields){
     await StorageAPI.saveEnvelope(env); closeSignModal(); await refreshEnvelopes(); render();
   });
   document.getElementById('btn-fill-continue').addEventListener('click', async (e)=>{
-    for(const f of myFields){ const gi=env.fields.indexOf(f); if(!values[gi]){ toast('נא לצייר חתימה בכל שדה'); return; } }
+    const missing = fieldCanvases.filter(({gi})=>!values[gi]);
+    if(missing.length>0){
+      const wantsToSignNow = confirm(`יש ${missing.length} שדות חתימה שעדיין לא מולאו. האם לחתום עליהם עכשיו, לפני אישור המסמך?`);
+      const target = missing[0].canvas;
+      target.scrollIntoView({behavior:'smooth', block:'center'});
+      target.style.outline = '2px solid var(--seal)'; target.style.outlineOffset='2px';
+      setTimeout(()=>{ target.style.outline=''; }, 2500);
+      return; // בשני המקרים (אישר או ביטל) לא ממשיכים — פשוט מפנים אותו לשדה החסר לטיפול
+    }
     sm.fieldValues = values;
     e.target.disabled = true; e.target.innerHTML = '<span class="spinner"></span> מטמיע חתימה...';
     await finalizeSignature(env, signer, myFields);
