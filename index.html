@@ -531,6 +531,7 @@ let state = {
   placingSignerId: null,
   placingFieldKind: 'signature', // 'signature' | 'stamp' — the type of field currently being placed
   placingStampReq: 'personal',   // when placingFieldKind==='stamp': 'personal' or a general stamp id
+  placingFieldSignerId: null,    // signer currently selected in the field editor's "שייך לחותם" dropdown
   signModal: null,
   authUser: null,      // raw Firebase Auth user (cloud mode only)
   realPersonId: null,  // roster id matched to authUser.email — the true logged-in identity
@@ -895,12 +896,23 @@ function stampLabelFor(f){
 }
 function renderFieldEditorSection(d){
   const fieldsOnPage = d.fields.filter(f=>f.page===state.currentPage);
-  let signerOptions = d.signerIds.map(id=>{ const p=state.roster.find(r=>r.id===id); return p ? `<option value="${p.id}">${escapeHtml(p.name)}</option>` : ''; }).join('');
+  if(!state.placingFieldSignerId || !d.signerIds.includes(state.placingFieldSignerId)) state.placingFieldSignerId = d.signerIds[0]||null;
+  let signerOptions = d.signerIds.map(id=>{ const p=state.roster.find(r=>r.id===id); return p ? `<option value="${p.id}" ${state.placingFieldSignerId===id?'selected':''}>${escapeHtml(p.name)}</option>` : ''; }).join('');
   let fieldList = d.fields.map((f,i)=>{
     const p = state.roster.find(r=>r.id===f.fieldSignerId) || {};
     const label = f.kind==='stamp' ? `חותמת (${escapeHtml(stampLabelFor(f))})` : 'חתימה';
     return `<div class="field-list-item"><span class="sw ${f.kind==='stamp'?'sw-stamp':''}"></span><span style="flex:1;">${label} · עמ' ${f.page} · ${escapeHtml(p.name||'?')}</span><button class="icon-btn" data-del-field="${i}">✕</button></div>`;
   }).join('') || `<div class="hint">לא נוספו שדות עדיין.</div>`;
+
+  // אזהרה מוקדמת: החותם שנבחר לא מורשה לחותמת הכללית שנבחרה — עדיף לגלות עכשיו ולא בזמן החתימה עצמה
+  let stampWarning = '';
+  if(state.placingFieldKind==='stamp' && state.placingStampReq && state.placingStampReq!=='personal' && state.placingFieldSignerId){
+    const s = state.stamps.find(x=>x.id===state.placingStampReq);
+    if(s && !(s.allowedUserIds||[]).includes(state.placingFieldSignerId)){
+      const signerName = state.roster.find(p=>p.id===state.placingFieldSignerId)?.name || '';
+      stampWarning = `<div class="hint" style="margin-top:6px;color:var(--seal-dark);">⚠️ ${escapeHtml(signerName)} אינו/ה מורשה/ית כרגע להטביע את "${escapeHtml(s.name)}" — ניתן להוסיף הרשאה בעמוד "ניהול", אחרת החותם ייתקל בחסימה בזמן החתימה.</div>`;
+    }
+  }
 
   return `
   <div class="editor-shell" style="margin-top:16px;">
@@ -941,6 +953,7 @@ function renderFieldEditorSection(d){
           <option value="personal" ${state.placingStampReq==='personal'?'selected':''}>חותמת אישית של החותם הנבחר</option>
           ${state.stamps.map(s=>`<option value="${s.id}" ${state.placingStampReq===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}
         </select>
+        ${stampWarning}
         ${state.stamps.length===0 ? `<div class="hint" style="margin-top:6px;">אין חותמות כלליות מוגדרות — אפשר להוסיף בעמוד "ניהול".</div>` : ''}` : ''}
         <button class="btn ${state.placingSignerId ? 'btn-seal':'btn-ghost'} btn-sm" id="btn-start-place" style="width:100%;justify-content:center;margin-top:10px;">${state.placingSignerId ? 'לחצו על המסמך…' : (state.placingFieldKind==='stamp' ? '+ הוסף שדה חותמת' : '+ הוסף שדה חתימה')}</button>
       </div>
@@ -982,8 +995,9 @@ function bindUploadEvents(){
 
   document.getElementById('btn-prev-page')?.addEventListener('click', (e)=>{ e.stopPropagation(); if(state.currentPage>1){ state.currentPage--; renderUploadPage(); } });
   document.getElementById('btn-next-page')?.addEventListener('click', (e)=>{ e.stopPropagation(); if(state.currentPage<d.pageCount){ state.currentPage++; renderUploadPage(); } });
+  document.getElementById('f-field-signer-select')?.addEventListener('change', e=>{ state.placingFieldSignerId = e.target.value; renderUploadPage(); });
   document.getElementById('f-field-kind-select')?.addEventListener('change', e=>{ state.placingFieldKind = e.target.value; if(state.placingFieldKind==='stamp' && !state.placingStampReq) state.placingStampReq='personal'; renderUploadPage(); });
-  document.getElementById('f-field-stamp-select')?.addEventListener('change', e=>{ state.placingStampReq = e.target.value; });
+  document.getElementById('f-field-stamp-select')?.addEventListener('change', e=>{ state.placingStampReq = e.target.value; renderUploadPage(); });
   document.getElementById('btn-start-place')?.addEventListener('click', (e)=>{
     e.stopPropagation();
     const signerId = document.getElementById('f-field-signer-select')?.value;
@@ -1778,15 +1792,18 @@ async function renderEnvelopeDetail(){
   if(!env){ state.currentEnvId=null; renderDashboard(); return; }
   const cu = getCurrentUser();
   const total = env.signers.length, signedCount = env.signers.filter(s=>s.status==='signed').length;
+  const canManage = cu && (cu.role==='admin' || cu.id===env.createdById);
   const signerRows = env.signers.map((s,i)=>{
     const dotClass = s.status==='signed'?'signed':(s.status==='declined'?'declined':(s.status==='active'?'active':'pending'));
     const statusText = s.status==='signed' ? `נחתם ${fmtDT(s.signedAt)}` : s.status==='declined' ? `נדחה ${fmtDT(s.declinedAt)} — ${escapeHtml(s.declineReason||'')}` : s.status==='active' ? 'ממתין לחתימתו כעת' : 'ממתין בתור';
     const canSign = s.status==='active' && !['Completed','Voided','Declined'].includes(env.status) && cu && cu.id===s.id;
+    const canRemind = canManage && s.status==='active' && !['Completed','Voided','Declined'].includes(env.status);
     return `<div class="signer-status-row">
       <span class="status-dot ${dotClass}"></span>
       <div style="flex:1;"><div style="font-weight:600;font-size:14px;">${env.flowType==='sequential'?(i+1)+'. ':''}${escapeHtml(s.name)}</div>
       <div style="font-size:12.5px;color:var(--gray);">${escapeHtml(s.email)} · ${statusText}</div></div>
       ${canSign ? `<button class="btn btn-seal btn-sm" data-simulate-sign="${s.id}">✍️ חתום עכשיו</button>` : ''}
+      ${canRemind ? `<button class="btn btn-ghost btn-sm" data-send-reminder="${s.id}">🔔 שלח תזכורת</button>` : ''}
     </div>`;
   }).join('');
   const auditRows = env.auditLog.slice().reverse().map(a=>`<tr><td>${fmtDT(a.ts)}</td><td>${escapeHtml(a.actor)}</td><td>${escapeHtml(a.action)}</td></tr>`).join('');
@@ -1818,10 +1835,21 @@ async function renderEnvelopeDetail(){
       <div class="stat-line"><span>Hash מקור (SHA-256)</span><b class="mono">${(env.originalHash||'').slice(0,16)}…</b></div>
       ${env.finalHash ? `<div class="stat-line"><span>Hash מסמך חתום</span><b class="mono">${env.finalHash.slice(0,16)}…</b></div>` : ''}
       ${voidBtn}
-    </div></div>
+    </div>
+    ${canManage ? `<div class="card card-pad" style="margin-top:16px;">
+      <label class="field-label">📝 הערה פנימית <span style="font-weight:400;color:var(--gray);">(לעיניי מנהל/מוציא המסמך בלבד — לא מוצג לחותמים)</span></label>
+      <textarea id="internal-note" rows="4" style="width:100%;resize:vertical;">${escapeHtml(env.internalNote||'')}</textarea>
+      <button class="btn btn-ghost btn-sm" id="btn-save-note" style="margin-top:8px;">שמור הערה</button>
+    </div>` : ''}
+    </div>
   </div>`;
 
   document.getElementById('btn-back-dash')?.addEventListener('click', ()=>{ state.currentEnvId=null; render(); });
+  document.getElementById('btn-save-note')?.addEventListener('click', async ()=>{
+    env.internalNote = document.getElementById('internal-note').value;
+    await StorageAPI.saveEnvelope(env);
+    toast('ההערה נשמרה');
+  });
   document.getElementById('btn-void-env')?.addEventListener('click', async ()=>{
     if(!confirm('לבטל את המסמך? לא ניתן לשחזר.')) return;
     env.status='Voided'; addAudit(env, cu ? cu.name : 'מנהל המערכת', 'המסמך בוטל על ידי היוזם');
@@ -1831,6 +1859,16 @@ async function renderEnvelopeDetail(){
   document.getElementById('btn-download-audit')?.addEventListener('click', ()=>downloadAuditTrail(env));
   document.getElementById('btn-read-doc-detail')?.addEventListener('click', ()=>openDocumentInNewTab(env.documentBase64 || env.finalPdfBase64));
   document.querySelectorAll('[data-simulate-sign]').forEach(b=>b.addEventListener('click', ()=>openSignModal(env.id, b.dataset.simulateSign)));
+  document.querySelectorAll('[data-send-reminder]').forEach(b=>b.addEventListener('click', async ()=>{
+    const s = env.signers.find(x=>x.id===b.dataset.sendReminder);
+    if(!s) return;
+    b.disabled = true; b.textContent = 'שולח...';
+    await notifySignerTurn(env, s);
+    addAudit(env, cu ? cu.name : 'מנהל המערכת', `נשלחה תזכורת ידנית ל-${s.name}`);
+    await StorageAPI.saveEnvelope(env);
+    b.textContent = '✓ נשלחה'; 
+    toast('תזכורת נשלחה ל-' + s.name);
+  }));
 }
 function downloadBase64Pdf(base64, filename){
   const buf = base64ToBuf(base64); const blob = new Blob([buf], {type:'application/pdf'});
@@ -2005,12 +2043,17 @@ function fillStepHtml(env, signer, myFields){
   const person = state.roster.find(r=>r.id===signer.id);
   const hasSaved = !!(person && person.signatureImage);
   const sigFields = myFields.filter(f=>f.kind!=='stamp');
+  const stampFields = myFields.filter(f=>f.kind==='stamp');
   return `<div style="max-height:60vh;overflow:auto;">
   <button class="btn btn-ghost btn-sm" id="btn-read-full-doc" style="margin-bottom:12px;">📄 קרא את המסמך המלא (בכרטיסייה חדשה)</button>
   ${myFields.length>1 ? `<div class="hint" style="margin-bottom:10px;">נדרשות ${myFields.length} השלמות במסמך זה, לפי הסדר הבא:</div>` : ''}
   ${hasSaved && sigFields.length>1 ? `<div class="otp-demo-note" style="background:var(--moss-soft);border-color:#BFDBCF;color:#1f4438;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
     <span>נמצאה חתימה שמורה עבורך במערכת — ניתן להדביק אותה אוטומטית בכל שדה חתימה, או לצייר חתימה חדשה.</span>
     <button class="btn btn-seal btn-sm" id="btn-insert-saved-all" style="white-space:nowrap;">🖋 הדבק בכל שדות החתימה (${sigFields.length})</button>
+  </div>` : ''}
+  ${stampFields.length>1 ? `<div class="otp-demo-note" style="background:#EAF2F6;border-color:#BFD8E6;color:#1D4A63;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <span>יש כמה שדות חותמת במסמך זה — אפשר להדביק את כל החותמות שאתה מורשה להטביע בבת אחת.</span>
+    <button class="btn btn-seal btn-sm" id="btn-apply-all-stamps" style="white-space:nowrap;background:#2E6B8A;border-color:#2E6B8A;">🔵 הדבק בכל החותמות (${stampFields.length})</button>
   </div>` : ''}
   ${myFields.map((f,idx)=>{
     const gi = env.fields.indexOf(f);
@@ -2095,6 +2138,7 @@ function bindFillStep(env, signer, myFields){
   const values = {};
   const fieldCanvases = []; // {gi, canvas} — שדות חתימה בלבד, לתמיכה בהדבקה לכולם
   const allFieldRefs = [];  // {gi, kind, scrollTarget} — כל השדות (חתימה + חותמת), לבדיקת "מה עדיין חסר" ולגלילה
+  const stampApplyFns = []; // {gi, apply} — שדות חותמת שהחותם מורשה להטביע, לתמיכה בהדבקה מרוכזת
   myFields.forEach(f=>{
     const gi = env.fields.indexOf(f);
     renderFieldPreviewThumbnail(env, f, 'fieldPreview-'+gi);
@@ -2107,16 +2151,17 @@ function bindFillStep(env, signer, myFields){
           if(!actionEl) return;
           actionEl.innerHTML = `<img src="${info.image}" style="height:44px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;display:block;margin-bottom:8px;">
             <button class="btn btn-seal btn-sm" data-apply-stamp="${gi}">🔵 הדבק חותמת: ${escapeHtml(info.name)}</button>`;
-          actionEl.querySelector(`[data-apply-stamp="${gi}"]`)?.addEventListener('click', ()=>{
-            values[gi] = info.image;
-            actionEl.innerHTML = `<img src="${info.image}" style="height:44px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;display:block;margin-bottom:8px;">
-              <div style="color:var(--moss);font-weight:600;font-size:13px;">✓ החותמת הוטבעה</div>
-              <button class="btn btn-ghost btn-sm" data-undo-stamp="${gi}" style="margin-top:6px;">בטל</button>`;
-            actionEl.querySelector(`[data-undo-stamp="${gi}"]`)?.addEventListener('click', ()=>{ values[gi]=''; showReady(); });
-            toast('החותמת הודבקה');
-          });
+          actionEl.querySelector(`[data-apply-stamp="${gi}"]`)?.addEventListener('click', ()=>{ doApply(); toast('החותמת הודבקה'); });
+        };
+        const doApply = ()=>{
+          values[gi] = info.image;
+          actionEl.innerHTML = `<img src="${info.image}" style="height:44px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;display:block;margin-bottom:8px;">
+            <div style="color:var(--moss);font-weight:600;font-size:13px;">✓ החותמת הוטבעה</div>
+            <button class="btn btn-ghost btn-sm" data-undo-stamp="${gi}" style="margin-top:6px;">בטל</button>`;
+          actionEl.querySelector(`[data-undo-stamp="${gi}"]`)?.addEventListener('click', ()=>{ values[gi]=''; showReady(); });
         };
         showReady();
+        stampApplyFns.push({ gi, apply: doApply });
       }
       return;
     }
@@ -2139,6 +2184,10 @@ function bindFillStep(env, signer, myFields){
       drawSavedSignatureIntoCanvas(canvas, person.signatureImage, dataUrl => { values[gi]=dataUrl; });
     });
     toast('החתימה הודבקה בכל שדות החתימה');
+  });
+  document.getElementById('btn-apply-all-stamps')?.addEventListener('click', ()=>{
+    stampApplyFns.forEach(({apply})=>apply());
+    toast(`הודבקו ${stampApplyFns.length} חותמות`);
   });
   const foot = document.getElementById('modalFoot');
   foot.innerHTML = `<button class="btn btn-ghost" id="btn-decline">סרב לחתום</button><button class="btn btn-seal" id="btn-fill-continue">אשר וחתום ✒</button>`;
