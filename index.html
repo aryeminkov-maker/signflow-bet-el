@@ -99,12 +99,19 @@ label.field-label{display:block;font-size:13px;font-weight:600;color:var(--ink-s
 .pdf-page-wrap canvas{display:block;}
 .field-box{position:absolute;border:1.5px solid var(--seal);background:rgba(168,64,47,.10);border-radius:4px;font-size:10.5px;color:var(--seal-dark);font-weight:700;display:flex;align-items:center;justify-content:center;cursor:grab;padding:2px;text-align:center;overflow:hidden;touch-action:none;user-select:none;}
 .field-box.field-box-stamp{border-color:#2E6B8A;background:rgba(46,107,138,.12);color:#1D4A63;}
+.field-box.field-box-combined{border-color:#6B3FA0;background:rgba(107,63,160,.12);color:#4A2B70;}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;}
+.chip{border:1.5px solid var(--line);background:#fff;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink-soft);transition:.15s;}
+.chip:hover{border-color:var(--gray);}
+.chip.chip-active{background:var(--ink);border-color:var(--ink);color:#fff;}
+.chip.chip-cancel{border-color:var(--seal);color:var(--seal-dark);}
 .field-box:active{cursor:grabbing;}
 .field-box .del{cursor:pointer;}
 .field-box .del{position:absolute;top:-9px;left:-9px;background:var(--ink);color:#fff;width:16px;height:16px;border-radius:50%;font-size:11px;line-height:16px;text-align:center;}
 .field-list-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;margin-bottom:6px;font-size:12.5px;background:#fff;}
 .field-list-item .sw{width:8px;height:8px;border-radius:2px;flex:none;background:var(--seal);}
 .field-list-item .sw.sw-stamp{background:#2E6B8A;}
+.field-list-item .sw.sw-combined{background:#6B3FA0;}
 table.audit{width:100%;border-collapse:collapse;font-size:13px;}
 table.audit th{text-align:right;color:var(--gray);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;}
 table.audit td{padding:9px 10px;border-bottom:1px solid #EFEBE1;}
@@ -529,9 +536,15 @@ let state = {
   draft: null,      // new envelope being built on the single upload page
   currentPage: 1,
   placingSignerId: null,
-  placingFieldKind: 'signature', // 'signature' | 'stamp' — the type of field currently being placed
-  placingStampReq: 'personal',   // when placingFieldKind==='stamp': 'personal' or a general stamp id
-  placingFieldSignerId: null,    // signer currently selected in the field editor's "שייך לחותם" dropdown
+  placingFieldKind: 'signature', // 'signature' | 'stamp' | 'combo' — the type of field currently being placed
+  placingStampReq: 'personal',   // when placingFieldKind is 'stamp'/'combo': 'personal' or a general stamp id
+  pickerSignerId: null,          // transient: signer selected in the visible-buttons picker, before a type is chosen
+  pickerKind: null,              // transient: field type selected in the picker, before a stamp (if needed) is chosen
+  pickerStampReq: null,          // transient: stamp choice selected in the picker, before the page-scope step
+  pickerShowCustomPages: false,  // transient: whether the per-page toggle grid is expanded in the picker
+  pickerCustomPages: [],         // transient: page numbers toggled on in the custom-page picker
+  placingPagesMode: 'current',   // 'current' | 'all' | 'custom' — which pages the armed field will be placed on
+  placingCustomPages: [],        // page numbers to place on when placingPagesMode==='custom'
   signModal: null,
   authUser: null,      // raw Firebase Auth user (cloud mode only)
   realPersonId: null,  // roster id matched to authUser.email — the true logged-in identity
@@ -824,9 +837,12 @@ function renderUploadPage(){
   html += `<div class="card card-pad section-block">
     <div class="section-heading"><span class="section-num">1</span> העלאת מסמך</div>
     ${d.documentName ? `
-      <div class="card" style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;">
+      <div class="card" style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <div>📄 <b>${escapeHtml(d.documentName)}</b> — ${d.pageCount} עמודים · ${(d.documentSizeBytes/1024).toFixed(0)}KB</div>
-        <button class="btn btn-ghost btn-sm" id="btn-replace-doc">החלף קובץ</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" id="btn-replace-doc">החלף קובץ</button>
+          <button class="btn btn-ghost btn-sm" id="btn-cancel-upload" style="color:var(--seal-dark);">✕ ביטול העלאה</button>
+        </div>
       </div>
       ${usingCloudBackend && d.documentSizeBytes > FIRESTORE_SAFE_PDF_BYTES*0.75 ? `
       <div class="hint" style="background:var(--amber-soft);border:1px solid #E4CE9C;color:#5C4318;border-radius:8px;padding:10px 12px;margin-top:8px;">
@@ -894,24 +910,65 @@ function stampLabelFor(f){
   const s = state.stamps.find(x=>x.id===f.stampRequirement);
   return s ? s.name : 'חותמת שנמחקה';
 }
+function kindIcon(kind){ return kind==='stamp' ? '🔵' : kind==='combo' ? '✍️🔵' : '✍️'; }
+function kindLabel(f){
+  if(f.kind==='stamp') return `חותמת (${escapeHtml(stampLabelFor(f))})`;
+  if(f.kind==='combo') return `חתימה + חותמת (${escapeHtml(stampLabelFor(f))})`;
+  return 'חתימה';
+}
 function renderFieldEditorSection(d){
   const fieldsOnPage = d.fields.filter(f=>f.page===state.currentPage);
-  if(!state.placingFieldSignerId || !d.signerIds.includes(state.placingFieldSignerId)) state.placingFieldSignerId = d.signerIds[0]||null;
-  let signerOptions = d.signerIds.map(id=>{ const p=state.roster.find(r=>r.id===id); return p ? `<option value="${p.id}" ${state.placingFieldSignerId===id?'selected':''}>${escapeHtml(p.name)}</option>` : ''; }).join('');
   let fieldList = d.fields.map((f,i)=>{
     const p = state.roster.find(r=>r.id===f.fieldSignerId) || {};
-    const label = f.kind==='stamp' ? `חותמת (${escapeHtml(stampLabelFor(f))})` : 'חתימה';
-    return `<div class="field-list-item"><span class="sw ${f.kind==='stamp'?'sw-stamp':''}"></span><span style="flex:1;">${label} · עמ' ${f.page} · ${escapeHtml(p.name||'?')}</span><button class="icon-btn" data-del-field="${i}">✕</button></div>`;
+    return `<div class="field-list-item"><span class="sw ${f.kind==='stamp'?'sw-stamp':f.kind==='combo'?'sw-combined':''}"></span><span style="flex:1;">${kindLabel(f)} · עמ' ${f.page} · ${escapeHtml(p.name||'?')}</span><button class="icon-btn" data-del-field="${i}">✕</button></div>`;
   }).join('') || `<div class="hint">לא נוספו שדות עדיין.</div>`;
 
-  // אזהרה מוקדמת: החותם שנבחר לא מורשה לחותמת הכללית שנבחרה — עדיף לגלות עכשיו ולא בזמן החתימה עצמה
-  let stampWarning = '';
-  if(state.placingFieldKind==='stamp' && state.placingStampReq && state.placingStampReq!=='personal' && state.placingFieldSignerId){
-    const s = state.stamps.find(x=>x.id===state.placingStampReq);
-    if(s && !(s.allowedUserIds||[]).includes(state.placingFieldSignerId)){
-      const signerName = state.roster.find(p=>p.id===state.placingFieldSignerId)?.name || '';
-      stampWarning = `<div class="hint" style="margin-top:6px;color:var(--seal-dark);">⚠️ ${escapeHtml(signerName)} אינו/ה מורשה/ית כרגע להטביע את "${escapeHtml(s.name)}" — ניתן להוסיף הרשאה בעמוד "ניהול", אחרת החותם ייתקל בחסימה בזמן החתימה.</div>`;
-    }
+  // שלב 1: בחירת חותם (כפתור גלוי לכל אחד)
+  const signerBtns = d.signerIds.map(id=>{
+    const p = state.roster.find(r=>r.id===id);
+    if(!p) return '';
+    return `<button class="btn ${state.pickerSignerId===id?'btn-seal':'btn-ghost'} btn-sm" data-pick-signer="${id}">${escapeHtml(p.name)}</button>`;
+  }).join('');
+
+  // שלב 2: בחירת סוג שדה (מוצג רק אחרי שנבחר חותם)
+  let kindBtns = '';
+  if(state.pickerSignerId){
+    kindBtns = `<div style="margin-top:12px;"><label class="field-label">איזה סוג שדה עבור ${escapeHtml(state.roster.find(p=>p.id===state.pickerSignerId)?.name||'')}?</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" data-pick-kind="signature">✍️ חתימה</button>
+        <button class="btn btn-ghost btn-sm" data-pick-kind="stamp">🔵 חותמת</button>
+        <button class="btn btn-ghost btn-sm" data-pick-kind="combo">✍️🔵 חתימה + חותמת</button>
+      </div></div>`;
+  }
+
+  // שלב 3: בחירת חותמת ספציפית (רק אם נבחר "חותמת" או "חתימה+חותמת")
+  let stampBtns = '';
+  if(state.pickerSignerId && (state.pickerKind==='stamp' || state.pickerKind==='combo') && !state.pickerStampReq){
+    const options = [{id:'personal', name:'חותמת אישית של החותם'}].concat(state.stamps.map(s=>({id:s.id, name:s.name})));
+    stampBtns = `<div style="margin-top:12px;"><label class="field-label">איזו חותמת נדרשת?</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${options.map(o=>`<button class="btn btn-ghost btn-sm" data-pick-stamp="${o.id}">${escapeHtml(o.name)}</button>`).join('')}
+      </div>
+      ${state.stamps.length===0 ? `<div class="hint" style="margin-top:6px;">אין חותמות כלליות מוגדרות — אפשר להוסיף בעמוד "ניהול".</div>` : ''}
+    </div>`;
+  }
+
+  // שלב 4: באילו עמודים למקם את השדה (רק במסמך מרובה-עמודים, ורק אחרי שסוג השדה והחותמת נקבעו במלואם)
+  let pageBtns = '';
+  const kindFullyChosen = state.pickerSignerId && state.pickerKind && (state.pickerKind==='signature' || state.pickerStampReq);
+  if(kindFullyChosen && d.pageCount>1){
+    pageBtns = `<div style="margin-top:12px;"><label class="field-label">באילו עמודים למקם את השדה?</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" data-pick-pages="current">רק עמוד ${state.currentPage} (הנוכחי)</button>
+        <button class="btn btn-ghost btn-sm" data-pick-pages="all">כל העמודים (${d.pageCount})</button>
+        <button class="btn ${state.pickerShowCustomPages?'btn-seal':'btn-ghost'} btn-sm" id="btn-toggle-custom-pages">בחירה עצמאית</button>
+      </div>
+      ${state.pickerShowCustomPages ? `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+        ${Array.from({length:d.pageCount},(_,i)=>i+1).map(pn=>`<button class="btn ${state.pickerCustomPages.includes(pn)?'btn-seal':'btn-ghost'} btn-sm" data-toggle-page="${pn}" style="min-width:38px;">${pn}</button>`).join('')}
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-confirm-custom-pages" style="margin-top:8px;" ${state.pickerCustomPages.length===0?'disabled':''}>אשר ${state.pickerCustomPages.length} עמודים נבחרים</button>` : ''}
+    </div>`;
   }
 
   return `
@@ -923,16 +980,16 @@ function renderFieldEditorSection(d){
           <span>עמוד ${state.currentPage} מתוך ${d.pageCount}</span>
           <button class="btn btn-ghost btn-sm" id="btn-next-page">הבא ›</button>
         </div>
-        <div class="hint">${state.placingSignerId ? 'לחצו על המסמך למיקום השדה' : 'בחרו חותם וסוג שדה, לחצו על הכפתור, ואז לחצו על המסמך'}</div>
+        <div class="hint">${state.placingSignerId ? (state.placingPagesMode==='all' ? `לחצו על המסמך — המיקום ימוקם בכל ${d.pageCount} העמודים` : state.placingPagesMode==='custom' ? `לחצו על המסמך — המיקום ימוקם ב-${state.placingCustomPages.length} העמודים שנבחרו` : 'לחצו על המסמך למיקום השדה') : 'בחרו חותם, ואז סוג שדה — לחיצה על המסמך תמקם אותו מיד'}</div>
       </div>
       <div class="pdf-stage">
-        <div class="pdf-page-wrap" id="pdfPageWrap">
+        <div class="pdf-page-wrap" id="pdfPageWrap" style="${state.placingSignerId?'cursor:crosshair;':''}">
           <canvas id="pdfCanvas"></canvas>
           ${fieldsOnPage.map((f)=>{
             const gi = d.fields.indexOf(f);
             const p = state.roster.find(r=>r.id===f.fieldSignerId) || {};
-            return `<div class="field-box ${f.kind==='stamp'?'field-box-stamp':''}" style="left:${f.xPct*100}%;top:${f.yPct*100}%;width:${f.wPct*100}%;height:${f.hPct*100}%;">
-              <span class="del" data-del-field="${gi}">✕</span>${f.kind==='stamp'?'🔵':'✍️'} ${escapeHtml((p.name||'').split(' ')[0]||'')}
+            return `<div class="field-box ${f.kind==='stamp'?'field-box-stamp':f.kind==='combo'?'field-box-combined':''}" style="left:${f.xPct*100}%;top:${f.yPct*100}%;width:${f.wPct*100}%;height:${f.hPct*100}%;">
+              <span class="del" data-del-field="${gi}">✕</span>${kindIcon(f.kind)} ${escapeHtml((p.name||'').split(' ')[0]||'')}
             </div>`;
           }).join('')}
         </div>
@@ -940,22 +997,11 @@ function renderFieldEditorSection(d){
     </div>
     <div>
       <div class="card card-pad" style="margin-bottom:16px;">
-        <label class="field-label">שייך לחותם</label>
-        <select id="f-field-signer-select">${signerOptions}</select>
-        <label class="field-label" style="margin-top:10px;">סוג שדה</label>
-        <select id="f-field-kind-select">
-          <option value="signature" ${state.placingFieldKind!=='stamp'?'selected':''}>✍️ חתימה</option>
-          <option value="stamp" ${state.placingFieldKind==='stamp'?'selected':''}>🔵 חותמת</option>
-        </select>
-        ${state.placingFieldKind==='stamp' ? `
-        <label class="field-label" style="margin-top:10px;">איזו חותמת נדרשת?</label>
-        <select id="f-field-stamp-select">
-          <option value="personal" ${state.placingStampReq==='personal'?'selected':''}>חותמת אישית של החותם הנבחר</option>
-          ${state.stamps.map(s=>`<option value="${s.id}" ${state.placingStampReq===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}
-        </select>
-        ${stampWarning}
-        ${state.stamps.length===0 ? `<div class="hint" style="margin-top:6px;">אין חותמות כלליות מוגדרות — אפשר להוסיף בעמוד "ניהול".</div>` : ''}` : ''}
-        <button class="btn ${state.placingSignerId ? 'btn-seal':'btn-ghost'} btn-sm" id="btn-start-place" style="width:100%;justify-content:center;margin-top:10px;">${state.placingSignerId ? 'לחצו על המסמך…' : (state.placingFieldKind==='stamp' ? '+ הוסף שדה חותמת' : '+ הוסף שדה חתימה')}</button>
+        <label class="field-label">1. בחרו חותם</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">${signerBtns}</div>
+        ${kindBtns}
+        ${stampBtns}
+        ${state.placingSignerId ? `<div class="hint" style="margin-top:12px;color:var(--seal-dark);font-weight:600;">👆 לחצו על המסמך למיקום השדה, או <a href="#" id="btn-cancel-place" style="color:inherit;">בטלו</a></div>` : ''}
       </div>
       <div class="card card-pad"><h3 style="font-size:14px;">שדות שהוגדרו (${d.fields.length})</h3>${fieldList}</div>
     </div>
@@ -971,6 +1017,11 @@ function bindUploadEvents(){
   dz?.addEventListener('dragleave', ()=>dz.classList.remove('drag'));
   dz?.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(!usingCloudBackend){ showAppMalfunction(); return; } if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
   document.getElementById('btn-replace-doc')?.addEventListener('click', ()=>{ if(!usingCloudBackend){ showAppMalfunction(); return; } fileInput.click(); });
+  document.getElementById('btn-cancel-upload')?.addEventListener('click', ()=>{
+    d.documentName=''; d.documentBase64=''; d.documentSizeBytes=0; d.pageCount=0; d.fields=[];
+    d.title=''; d.titleManuallyEdited=false; state.currentPage=1;
+    renderUploadPage();
+  });
   fileInput?.addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
   document.getElementById('f-title')?.addEventListener('input', e=>{ d.title=e.target.value; d.titleManuallyEdited=true; syncSendBtn(); });
   document.getElementById('btn-goto-admin')?.addEventListener('click', ()=>switchTab('admin'));
@@ -995,14 +1046,61 @@ function bindUploadEvents(){
 
   document.getElementById('btn-prev-page')?.addEventListener('click', (e)=>{ e.stopPropagation(); if(state.currentPage>1){ state.currentPage--; renderUploadPage(); } });
   document.getElementById('btn-next-page')?.addEventListener('click', (e)=>{ e.stopPropagation(); if(state.currentPage<d.pageCount){ state.currentPage++; renderUploadPage(); } });
-  document.getElementById('f-field-signer-select')?.addEventListener('change', e=>{ state.placingFieldSignerId = e.target.value; renderUploadPage(); });
-  document.getElementById('f-field-kind-select')?.addEventListener('change', e=>{ state.placingFieldKind = e.target.value; if(state.placingFieldKind==='stamp' && !state.placingStampReq) state.placingStampReq='personal'; renderUploadPage(); });
-  document.getElementById('f-field-stamp-select')?.addEventListener('change', e=>{ state.placingStampReq = e.target.value; renderUploadPage(); });
-  document.getElementById('btn-start-place')?.addEventListener('click', (e)=>{
-    e.stopPropagation();
-    const signerId = document.getElementById('f-field-signer-select')?.value;
-    if(!signerId){ toast('בחרו חותם'); return; }
-    state.placingSignerId = state.placingSignerId ? null : signerId;
+  function armPlacement(pagesMode, customPages){
+    state.placingSignerId = state.pickerSignerId;
+    state.placingFieldKind = state.pickerKind;
+    state.placingStampReq = state.pickerStampReq;
+    state.placingPagesMode = pagesMode;
+    state.placingCustomPages = customPages || [];
+    state.pickerSignerId = null; state.pickerKind = null; state.pickerStampReq = null;
+    state.pickerShowCustomPages = false; state.pickerCustomPages = [];
+    renderUploadPage();
+  }
+  document.querySelectorAll('[data-pick-signer]').forEach(b=>b.addEventListener('click', ()=>{
+    state.pickerSignerId = state.pickerSignerId===b.dataset.pickSigner ? null : b.dataset.pickSigner;
+    state.pickerKind = null; state.pickerStampReq = null; state.pickerShowCustomPages = false; state.pickerCustomPages = [];
+    renderUploadPage();
+  }));
+  document.querySelectorAll('[data-pick-kind]').forEach(b=>b.addEventListener('click', ()=>{
+    const kind = b.dataset.pickKind;
+    state.pickerKind = kind;
+    state.pickerStampReq = null; state.pickerShowCustomPages = false; state.pickerCustomPages = [];
+    if(kind==='signature' && d.pageCount<=1) armPlacement('current');
+    else renderUploadPage();
+  }));
+  document.querySelectorAll('[data-pick-stamp]').forEach(b=>b.addEventListener('click', ()=>{
+    const stampReq = b.dataset.pickStamp;
+    if(stampReq!=='personal'){
+      const s = state.stamps.find(x=>x.id===stampReq);
+      const signer = state.roster.find(p=>p.id===state.pickerSignerId);
+      if(s && signer && !(s.allowedUserIds||[]).includes(signer.id)){
+        const ok = confirm(`${signer.name} אינו/ה מורשה/ית כרגע להטביע את "${s.name}". אפשר להוסיף הרשאה בעמוד "ניהול" מאוחר יותר. להמשיך ולמקם את השדה בכל זאת?`);
+        if(!ok) return;
+      }
+    }
+    state.pickerStampReq = stampReq;
+    if(d.pageCount<=1) armPlacement('current');
+    else renderUploadPage();
+  }));
+  document.querySelectorAll('[data-pick-pages]').forEach(b=>b.addEventListener('click', ()=>{
+    armPlacement(b.dataset.pickPages);
+  }));
+  document.getElementById('btn-toggle-custom-pages')?.addEventListener('click', ()=>{
+    state.pickerShowCustomPages = !state.pickerShowCustomPages;
+    renderUploadPage();
+  });
+  document.querySelectorAll('[data-toggle-page]').forEach(b=>b.addEventListener('click', ()=>{
+    const pn = +b.dataset.togglePage;
+    state.pickerCustomPages = state.pickerCustomPages.includes(pn) ? state.pickerCustomPages.filter(x=>x!==pn) : [...state.pickerCustomPages, pn].sort((a,b)=>a-b);
+    renderUploadPage();
+  }));
+  document.getElementById('btn-confirm-custom-pages')?.addEventListener('click', ()=>{
+    if(state.pickerCustomPages.length===0) return;
+    armPlacement('custom', state.pickerCustomPages.slice());
+  });
+  document.getElementById('btn-cancel-place')?.addEventListener('click', (e)=>{
+    e.preventDefault();
+    state.placingSignerId = null;
     renderUploadPage();
   });
   document.querySelectorAll('[data-del-field]').forEach(b=>b.addEventListener('click', (e)=>{
@@ -1017,11 +1115,17 @@ function bindUploadEvents(){
     const rect = pageWrap.getBoundingClientRect();
     const xPct = (e.clientX-rect.left)/rect.width, yPct = (e.clientY-rect.top)/rect.height;
     const wPct=0.22, hPct=0.06;
-    const kind = state.placingFieldKind==='stamp' ? 'stamp' : 'signature';
-    d.fields.push({ id:uid(), fieldSignerId: state.placingSignerId, page: state.currentPage,
-      xPct: Math.max(0,Math.min(1-wPct,xPct-wPct/2)), yPct: Math.max(0,Math.min(1-hPct,yPct-hPct/2)),
-      wPct, hPct, signatureDataUrl:'', filledAt:null,
-      kind, stampRequirement: kind==='stamp' ? (state.placingStampReq||'personal') : null });
+    const kind = state.placingFieldKind;
+    const stampRequirement = (kind==='stamp'||kind==='combo') ? (state.placingStampReq||'personal') : null;
+    const targetPages = state.placingPagesMode==='all' ? Array.from({length:d.pageCount},(_,i)=>i+1)
+      : state.placingPagesMode==='custom' ? state.placingCustomPages
+      : [state.currentPage];
+    targetPages.forEach(pn=>{
+      d.fields.push({ id:uid(), fieldSignerId: state.placingSignerId, page: pn,
+        xPct: Math.max(0,Math.min(1-wPct,xPct-wPct/2)), yPct: Math.max(0,Math.min(1-hPct,yPct-hPct/2)),
+        wPct, hPct, signatureDataUrl:'', filledAt:null, kind, stampRequirement });
+    });
+    if(targetPages.length>1) toast(`שדה נוסף ל-${targetPages.length} עמודים`);
     state.placingSignerId = null;
     renderUploadPage();
   });
@@ -2043,7 +2147,7 @@ function fillStepHtml(env, signer, myFields){
   const person = state.roster.find(r=>r.id===signer.id);
   const hasSaved = !!(person && person.signatureImage);
   const sigFields = myFields.filter(f=>f.kind!=='stamp');
-  const stampFields = myFields.filter(f=>f.kind==='stamp');
+  const stampFields = myFields.filter(f=>f.kind==='stamp'||f.kind==='combo');
   return `<div style="max-height:60vh;overflow:auto;">
   <button class="btn btn-ghost btn-sm" id="btn-read-full-doc" style="margin-bottom:12px;">📄 קרא את המסמך המלא (בכרטיסייה חדשה)</button>
   ${myFields.length>1 ? `<div class="hint" style="margin-bottom:10px;">נדרשות ${myFields.length} השלמות במסמך זה, לפי הסדר הבא:</div>` : ''}
@@ -2057,6 +2161,31 @@ function fillStepHtml(env, signer, myFields){
   </div>` : ''}
   ${myFields.map((f,idx)=>{
     const gi = env.fields.indexOf(f);
+    if(f.kind==='combo'){
+      const info = stampFieldInfo(f, signer, person);
+      return `<div class="field-group" style="border:1px solid #D8CCEA;border-radius:10px;padding:14px;background:#F8F5FC;">
+        <label class="field-label">✍️🔵 חתימה + חותמת נדרשות ${myFields.length>1 ? '#'+(idx+1)+' — ' : ''}עמוד ${f.page} מתוך ${env.pageCount}: ${escapeHtml(info.name)}</label>
+        <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="flex:none;">
+            <canvas id="fieldPreview-${gi}" class="field-preview-canvas" style="width:150px;border:1px solid var(--line);border-radius:6px;display:block;background:#fff;"></canvas>
+            <div class="hint" style="text-align:center;margin-top:4px;">מיקום השדה במסמך</div>
+          </div>
+          <div style="flex:1;min-width:260px;">
+            <div class="sig-pad-wrap"><canvas id="sigCanvas-${gi}" width="680" height="180"></canvas><div class="sig-baseline"></div></div>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+              <button class="btn btn-ghost btn-sm" data-clear-sig="${gi}">נקה חתימה</button>
+              ${hasSaved ? `<button class="btn btn-seal btn-sm" data-insert-saved-sig="${gi}">🖋 הדבק חתימה שמורה</button>` : ''}
+            </div>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #D8CCEA;" id="stamp-action-${gi}">
+              ${!info.image ? `<div class="hint" style="color:var(--seal-dark);">⚠️ ${escapeHtml(info.reasonIfBlocked)} יש לפנות למנהל/ת המערכת.</div>`
+                : !info.allowed ? `<div class="hint" style="color:var(--seal-dark);">🔒 ${escapeHtml(info.reasonIfBlocked)} יש לפנות למנהל/ת המערכת שיטביע/שיוסיף הרשאה.</div>`
+                : `<img src="${info.image}" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;display:block;margin-bottom:8px;">
+                   <button class="btn btn-seal btn-sm" data-apply-stamp="${gi}" style="background:#2E6B8A;border-color:#2E6B8A;">🔵 הדבק חותמת: ${escapeHtml(info.name)}</button>`}
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }
     if(f.kind==='stamp'){
       const info = stampFieldInfo(f, signer, person);
       return `<div class="field-group" style="border:1px solid #BFD8E6;border-radius:10px;padding:14px;background:#F3F8FB;">
@@ -2108,10 +2237,11 @@ async function renderFieldPreviewThumbnail(env, field, canvasId){
     const ctx = canvas.getContext('2d');
     await page.render({canvasContext:ctx, viewport:sv}).promise;
     const bx = field.xPct*canvas.width, by = field.yPct*canvas.height, bw = field.wPct*canvas.width, bh = field.hPct*canvas.height;
-    const isStamp = field.kind==='stamp';
-    ctx.fillStyle = isStamp ? 'rgba(46,107,138,0.22)' : 'rgba(168,64,47,0.22)';
+    const boxColor = field.kind==='stamp' ? '#2E6B8A' : field.kind==='combo' ? '#6B3FA0' : '#A8402F';
+    ctx.fillStyle = boxColor.replace('#','').match(/.{2}/g).map(h=>parseInt(h,16)).join(',');
+    ctx.fillStyle = `rgba(${ctx.fillStyle},0.22)`;
     ctx.fillRect(bx,by,bw,bh);
-    ctx.strokeStyle = isStamp ? '#2E6B8A' : '#A8402F'; ctx.lineWidth = Math.max(2, canvas.width*0.008);
+    ctx.strokeStyle = boxColor; ctx.lineWidth = Math.max(2, canvas.width*0.008);
     ctx.strokeRect(bx,by,bw,bh);
   }catch(err){ console.error('field preview render error', err); }
 }
@@ -2142,6 +2272,43 @@ function bindFillStep(env, signer, myFields){
   myFields.forEach(f=>{
     const gi = env.fields.indexOf(f);
     renderFieldPreviewThumbnail(env, f, 'fieldPreview-'+gi);
+    if(f.kind==='combo'){
+      const comboState = { sig:'', stamp:'' };
+      const syncCombo = ()=>{ values[gi] = (comboState.sig && comboState.stamp) ? JSON.stringify(comboState) : ''; };
+      const canvas = document.getElementById('sigCanvas-'+gi);
+      if(canvas){
+        fieldCanvases.push({ gi, canvas, isCombo:true, comboState, syncCombo });
+        setupSignaturePad(canvas, dataUrl => { comboState.sig = dataUrl; syncCombo(); });
+        document.querySelector(`[data-clear-sig="${gi}"]`)?.addEventListener('click', ()=>{
+          canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); comboState.sig=''; syncCombo();
+        });
+        document.querySelector(`[data-insert-saved-sig="${gi}"]`)?.addEventListener('click', ()=>{
+          if(!person || !person.signatureImage) return;
+          drawSavedSignatureIntoCanvas(canvas, person.signatureImage, dataUrl => { comboState.sig=dataUrl; syncCombo(); });
+        });
+      }
+      const info = stampFieldInfo(f, signer, person);
+      const actionEl = document.getElementById('stamp-action-'+gi);
+      allFieldRefs.push({ gi, kind:'combo', scrollTarget: canvas||actionEl });
+      if(info.image && info.allowed){
+        const showReady = ()=>{
+          if(!actionEl) return;
+          actionEl.innerHTML = `<img src="${info.image}" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;display:block;margin-bottom:8px;">
+            <button class="btn btn-seal btn-sm" data-apply-stamp="${gi}" style="background:#2E6B8A;border-color:#2E6B8A;">🔵 הדבק חותמת: ${escapeHtml(info.name)}</button>`;
+          actionEl.querySelector(`[data-apply-stamp="${gi}"]`)?.addEventListener('click', ()=>{ doApply(); toast('החותמת הודבקה'); });
+        };
+        const doApply = ()=>{
+          comboState.stamp = info.image; syncCombo();
+          actionEl.innerHTML = `<img src="${info.image}" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px;display:block;margin-bottom:8px;">
+            <div style="color:var(--moss);font-weight:600;font-size:13px;">✓ החותמת הוטבעה</div>
+            <button class="btn btn-ghost btn-sm" data-undo-stamp="${gi}" style="margin-top:6px;">בטל</button>`;
+          actionEl.querySelector(`[data-undo-stamp="${gi}"]`)?.addEventListener('click', ()=>{ comboState.stamp=''; syncCombo(); showReady(); });
+        };
+        showReady();
+        stampApplyFns.push({ gi, apply: doApply });
+      }
+      return;
+    }
     if(f.kind==='stamp'){
       const info = stampFieldInfo(f, signer, person);
       const actionEl = document.getElementById('stamp-action-'+gi);
@@ -2180,8 +2347,10 @@ function bindFillStep(env, signer, myFields){
   });
   document.getElementById('btn-insert-saved-all')?.addEventListener('click', ()=>{
     if(!person || !person.signatureImage) return;
-    fieldCanvases.forEach(({gi, canvas})=>{
-      drawSavedSignatureIntoCanvas(canvas, person.signatureImage, dataUrl => { values[gi]=dataUrl; });
+    fieldCanvases.forEach(({gi, canvas, isCombo, comboState, syncCombo})=>{
+      drawSavedSignatureIntoCanvas(canvas, person.signatureImage, dataUrl => {
+        if(isCombo){ comboState.sig = dataUrl; syncCombo(); } else { values[gi]=dataUrl; }
+      });
     });
     toast('החתימה הודבקה בכל שדות החתימה');
   });
@@ -2202,7 +2371,7 @@ function bindFillStep(env, signer, myFields){
   document.getElementById('btn-fill-continue').addEventListener('click', async (e)=>{
     const missing = allFieldRefs.filter(({gi})=>!values[gi]);
     if(missing.length>0){
-      const label = missing[0].kind==='stamp' ? 'שדות חותמת/חתימה' : 'שדות חתימה';
+      const label = (missing[0].kind==='stamp'||missing[0].kind==='combo') ? 'שדות חותמת/חתימה' : 'שדות חתימה';
       confirm(`יש ${missing.length} ${label} שעדיין לא מולאו. האם להשלים אותם עכשיו, לפני אישור המסמך?`);
       const target = missing[0].scrollTarget;
       if(target){
@@ -2327,9 +2496,21 @@ async function generateFinalPdf(env){
       const boxX=f.xPct*width, boxYTop=f.yPct*height, boxW=f.wPct*width, boxH=f.hPct*height;
       const boxYBottom = height - boxYTop - boxH;
       try{
-        const pngBytes = base64ToBuf(f.signatureDataUrl.split(',')[1]);
-        const pngImage = await pdfDoc.embedPng(pngBytes);
-        page.drawImage(pngImage, { x:boxX, y:boxYBottom, width:boxW, height:boxH });
+        if(f.kind==='combo'){
+          // שדה משולב: JSON עם שתי תמונות — החתימה ממלאת את כל התיבה, והחותמת חופפת כשכבה בפינה (כמו במסמך מודפס)
+          const parsed = JSON.parse(f.signatureDataUrl);
+          const sigBytes = base64ToBuf(parsed.sig.split(',')[1]);
+          const sigImage = await pdfDoc.embedPng(sigBytes);
+          page.drawImage(sigImage, { x:boxX, y:boxYBottom, width:boxW, height:boxH });
+          const stampBytes = base64ToBuf(parsed.stamp.split(',')[1]);
+          const stampImage = await pdfDoc.embedPng(stampBytes);
+          const stW = boxW*0.55, stH = boxH*0.9;
+          page.drawImage(stampImage, { x:boxX+boxW-stW, y:boxYBottom, width:stW, height:stH, opacity:0.9 });
+        } else {
+          const pngBytes = base64ToBuf(f.signatureDataUrl.split(',')[1]);
+          const pngImage = await pdfDoc.embedPng(pngBytes);
+          page.drawImage(pngImage, { x:boxX, y:boxYBottom, width:boxW, height:boxH });
+        }
       }catch(e){ console.error('sig embed error', e); }
     }
     const outBytes = await pdfDoc.save();
